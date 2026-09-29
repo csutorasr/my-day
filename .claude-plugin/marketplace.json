@@ -10,7 +10,7 @@
       "name": "my-day",
       "source": "./",
       "description": "Run-forever development loop: merges ready MRs/PRs, fixes review comments, develops assigned tickets on worktrees, triages unassigned work, with a local dashboard.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "category": "productivity",
       "keywords": [
         "workflow",

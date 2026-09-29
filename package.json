@@ -4,6 +4,6 @@
   "type": "module",
   "engines": { "node": ">=22.13" },
   "scripts": {
-    "test": "node --test skills/my-day-loop/test/*.test.mjs"
+    "test": "node --test skills/loop/test/*.test.mjs"
   }
 }

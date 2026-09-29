@@ -1,11 +1,11 @@
 ---
-name: my-day-config
+name: config
 description: Use while the my-day loop runs, whenever the user's answer or instruction changes how the loop should behave from now on - "ignore ABC-50", "don't merge on Fridays", "always ask before rebasing", "route frontend bugs to CI", "stop notifying me about drafts", "add Anna as reviewer for the API repo" - or when the loop discovers a fact it will need again (a bot account, a status name, a job name). Writes the rule into the right .my-day/*.md file so it survives the session.
 ---
 
 # my-day config update
 
-`$SM` = `${CLAUDE_PLUGIN_ROOT}/skills/my-day-loop/bin/state.mjs` (full path in every Bash call).
+`$SM` = `${CLAUDE_PLUGIN_ROOT}/skills/loop/bin/state.mjs` (full path in every Bash call).
 Read the current config with `$SM config show <NAME>` / `$SM config all`.
 
 A decision that only lives in the state DB or in this conversation is lost next session and

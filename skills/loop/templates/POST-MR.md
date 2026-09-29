@@ -1,4 +1,4 @@
-<!-- TEMPLATE — a worked example (Jira + GitLab). my-day-setup replaces every <PLACEHOLDER> and rewrites tool-specific parts for the user's tracker and code host. -->
+<!-- TEMPLATE — a worked example (Jira + GitLab). my-day:setup replaces every <PLACEHOLDER> and rewrites tool-specific parts for the user's tracker and code host. -->
 # After an MR is opened
 
 1. Assign the Jira ticket to me (if not already) and transition it to **<STATUS_IN_REVIEW>**.

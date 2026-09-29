@@ -21,11 +21,11 @@ reviewBatchNotify: 3
 # Personal keys belong in LOOP.local.md: trackerAccountId, gitEmail
 ---
 
-<!-- TEMPLATE — a worked example (Jira + GitLab). my-day-setup replaces every <PLACEHOLDER> and rewrites tool-specific parts for the user's tracker and code host. -->
+<!-- TEMPLATE — a worked example (Jira + GitLab). my-day:setup replaces every <PLACEHOLDER> and rewrites tool-specific parts for the user's tracker and code host. -->
 
 # Loop
 
-State CLI: `bin/state.mjs` of the my-day plugin's `my-day-loop` skill (`$SM` below; the skills give the full path).
+State CLI: `bin/state.mjs` of the my-day plugin's `loop` skill (`$SM` below; the skills give the full path).
 
 ## Tick priority
 1. Merge-ready MRs (`MERGE-GATES.md`)

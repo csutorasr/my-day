@@ -54,11 +54,11 @@ flowchart LR
 
 | Skill | Role |
 |---|---|
-| `my-day-loop` | Orchestrator. Bootstraps, runs `tick`, acts, dispatches workers, schedules the next wakeup. Holds the shared code. |
-| `my-day-setup` | First-run interview: tracker, code host, scope, workflow → writes `.my-day/*.md` from templates. |
-| `my-day-config` | Turns standing decisions made while the loop runs ("ignore ABC-50", "never merge on Fridays") into config edits. |
-| `my-day-worker` | Background agent: `develop`, `bug`, `review-fix`, `pipeline-fix`, `rebase` — each on its own git worktree. |
-| `my-day-summary` | "What happened today?", failures, `elaborate <id>`. |
+| `my-day:loop` | Orchestrator. Bootstraps, runs `tick`, acts, dispatches workers, schedules the next wakeup. Holds the shared code. |
+| `my-day:setup` | First-run interview: tracker, code host, scope, workflow → writes `.my-day/*.md` from templates. |
+| `my-day:config` | Turns standing decisions made while the loop runs ("ignore ABC-50", "never merge on Fridays") into config edits. |
+| `my-day:worker` | Background agent: `develop`, `bug`, `review-fix`, `pipeline-fix`, `rebase` — each on its own git worktree. |
+| `my-day:summary` | "What happened today?", failures, `elaborate <id>`. |
 
 ## Requirements
 
@@ -81,7 +81,7 @@ In Claude Code:
 (or from a shell: `claude plugin marketplace add csutorasr/my-day && claude plugin install my-day@csutorasr`).
 The repository is private for now, so this needs git access to it.
 
-Skills are namespaced by the plugin: `/my-day:my-day-loop`, `my-day:my-day-setup`, ….
+Skills are namespaced by the plugin: `/my-day:loop`, `my-day:setup`, ….
 Web push is optional — setup offers to install its one dependency (`web-push`); without it
 the dashboard still notifies while its tab is open.
 
@@ -90,10 +90,10 @@ the dashboard still notifies while its tab is open.
 In the root of the workspace you want the loop to work on:
 
 ```
-/my-day:my-day-loop
+/my-day:loop
 ```
 
-With no `.my-day/` yet, `my-day-setup` interviews you (one question at a time, proposing what
+With no `.my-day/` yet, `my-day:setup` interviews you (one question at a time, proposing what
 it found): which tracker and code host you use, which tickets count as your development work,
 which bucket tickets to ignore, how bugs and stories flow, your merge gates, who reviews what.
 Then the dashboard opens at `http://127.0.0.1:4711` and the loop starts.
@@ -139,7 +139,7 @@ Add to `.gitignore`:
 ## How it works
 
 The model only does what needs judgement. Everything deterministic runs in Node through one
-CLI, `skills/my-day-loop/bin/state.mjs`, backed by SQLite in `.my-day/state.db`:
+CLI, `skills/loop/bin/state.mjs`, backed by SQLite in `.my-day/state.db`:
 
 | Command | Does |
 |---|---|

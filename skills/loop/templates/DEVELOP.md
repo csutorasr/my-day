@@ -1,4 +1,4 @@
-<!-- TEMPLATE — a worked example (Jira + GitLab). my-day-setup replaces every <PLACEHOLDER> and rewrites tool-specific parts for the user's tracker and code host. -->
+<!-- TEMPLATE — a worked example (Jira + GitLab). my-day:setup replaces every <PLACEHOLDER> and rewrites tool-specific parts for the user's tracker and code host. -->
 # Development rules (workers)
 
 ## Worktrees
@@ -12,7 +12,7 @@
 <SPEC_REPO> (contract) → <SDK release step> → <BACKEND_REPO> → <FRONTEND_REPO>.
 Consumer MRs that use a pre-release SDK must switch to the released one before they merge (MERGE-GATES).
 
-## Repo specifics (on top of my-day-worker's rules)
+## Repo specifics (on top of my-day:worker's rules)
 - <per-repo tooling notes, e.g. which package manager a repo uses>
 - Open MRs with `glab mr create --fill --target-branch main`; multiline descriptions via `--input -` JSON.
 - Never touch `<CI_PLAN_MARKER>` branches while the CI implementation job runs.

@@ -1,4 +1,4 @@
-<!-- TEMPLATE — a worked example (Jira + GitLab). my-day-setup replaces every <PLACEHOLDER> and rewrites tool-specific parts for the user's tracker and code host. -->
+<!-- TEMPLATE — a worked example (Jira + GitLab). my-day:setup replaces every <PLACEHOLDER> and rewrites tool-specific parts for the user's tracker and code host. -->
 # Query: reviews requested from me
 
 Handled by `$SM tick` (sync): open, non-draft MRs where my review is requested become
