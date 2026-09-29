@@ -1,0 +1,8 @@
+{
+  "name": "my-day",
+  "version": "0.1.0",
+  "description": "Run-forever development loop: merges ready MRs/PRs, fixes review comments, develops assigned tickets on worktrees, triages unassigned work, with a local dashboard.",
+  "author": { "name": "Robin Csutorás", "url": "https://github.com/csutorasr" },
+  "repository": "https://github.com/csutorasr/my-day",
+  "keywords": ["workflow", "merge-requests", "code-review", "jira", "gitlab", "github", "automation"]
+}

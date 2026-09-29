@@ -1,0 +1,26 @@
+{
+  "name": "csutorasr",
+  "owner": {
+    "name": "Robin Csutorás",
+    "url": "https://github.com/csutorasr"
+  },
+  "description": "Claude Code plugins by Robin Csutorás.",
+  "plugins": [
+    {
+      "name": "my-day",
+      "source": "./",
+      "description": "Run-forever development loop: merges ready MRs/PRs, fixes review comments, develops assigned tickets on worktrees, triages unassigned work, with a local dashboard.",
+      "version": "0.1.0",
+      "category": "productivity",
+      "keywords": [
+        "workflow",
+        "merge-requests",
+        "code-review",
+        "jira",
+        "gitlab",
+        "github",
+        "automation"
+      ]
+    }
+  ]
+}

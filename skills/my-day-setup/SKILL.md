@@ -5,8 +5,8 @@ description: Use when .my-day config files are missing (first run of the my-day 
 
 # my-day setup
 
-`$SM` = `~/.claude/skills/my-day-loop/bin/state.mjs` (write the full path in each Bash call;
-shell variables do not persist). Templates: `~/.claude/skills/my-day-loop/templates/`.
+`$SM` = `${CLAUDE_PLUGIN_ROOT}/skills/my-day-loop/bin/state.mjs` (write the full path in each Bash call;
+shell variables do not persist). Templates: `${CLAUDE_PLUGIN_ROOT}/skills/my-day-loop/templates/`.
 Templates are a worked example (a Jira + GitLab workspace); adapt them to what the user
 actually uses — never assume the example's tools.
 
@@ -90,7 +90,10 @@ In a git repo root append to `.gitignore` (ask before editing a tracked file; ot
 .my-day/server.log
 .worktrees/
 ```
-`$SM config missing` empty → hand back to `my-day-loop`.
+Web push (optional): `npm install --prefix ${CLAUDE_PLUGIN_ROOT}/skills/my-day-loop/server --no-audit --no-fund`
+— without it the dashboard only notifies while its tab is open.
+
+`$SM config missing` empty → hand back to `my-day:my-day-loop`.
 
 ## Code host commands
 Templates show GitLab (`glab`). For GitHub rewrite the commands with the equivalents:

@@ -6,15 +6,15 @@ description: Use when the user says "my day", "start my day", "/my-day-loop", or
 # my-day loop (orchestrator)
 
 This session owns the state, runs brainstorms, talks to the user and dispatches background
-workers. It never writes product code. CLI: `~/.claude/skills/my-day-loop/bin/state.mjs`
+workers. It never writes product code. CLI: `${CLAUDE_PLUGIN_ROOT}/skills/my-day-loop/bin/state.mjs`
 (`$SM` below — write the full path in every Bash call). `$SM help` lists every command.
 Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
 
 ## Start
 1. `$SM bootstrap --new-session` on the first call of a session, `$SM bootstrap` after.
-   `missing` non-empty → run `my-day-setup` first. First call: `open <server.url>`.
+   `missing` non-empty → run the `my-day:my-day-setup` skill first. First call: `open <server.url>`.
 2. Read `$SM config all` once per session; re-read a file after it changes.
-3. Not inside `/loop` yet → invoke the `loop` skill with `/my-day-loop` (self-paced); it runs
+3. Not inside `/loop` yet → invoke the `loop` skill with `/my-day:my-day-loop` (self-paced); it runs
    the first tick right away.
 
 ## Tick
@@ -35,13 +35,13 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
      `brainstorm-queued`); code steps → `develop` / `bug` worker.
    - Nothing actionable → TRIAGE.md for inbox items.
 5. `$SM prune` once a day.
-6. `ScheduleWakeup`: prompt `/loop /my-day-loop`, `delaySeconds` = `schedule.delaySeconds`,
+6. `ScheduleWakeup`: prompt `/loop /my-day:my-day-loop`, `delaySeconds` = `schedule.delaySeconds`,
    `noop` = nothing changed.
 
 ## Workers
 Agent tool, `general-purpose`, no `isolation` (workers make their own sub-repo worktree):
 ```
-Invoke the Skill tool with "my-day-worker" and follow it.
+Invoke the Skill tool with "my-day:my-day-worker" and follow it.
 Kind: <develop|bug|review-fix|pipeline-fix|rebase>. Workspace root: <abs path>.
 Item: <id>. Dry run: <true|false>.
 Task: <goal and what "done" means; add "local only" when no push/MR/tracker writes are allowed>.
@@ -54,8 +54,8 @@ Then `$SM dispatch <id> --agent <name> --status <new status>`. On completion:
 - All communication in this session (the user follows it via Remote Control); the dashboard
   mirrors it. Ask with `$SM ask <id> "<q>"` and in chat as "q-4 · bug-2 (ABC-812 …): …";
   record with `$SM answer` / `$SM decline`; never re-ask; keep working meanwhile.
-- An answer or instruction that sets a standing rule → `my-day-config`.
-- `elaborate <id>` / `summary …` → `my-day-summary`. `pause` (no dispatch), `resume`,
+- An answer or instruction that sets a standing rule → `my-day:my-day-config`.
+- `elaborate <id>` / `summary …` → `my-day:my-day-summary`. `pause` (no dispatch), `resume`,
   `stop` (`ScheduleWakeup stop`; server stays), `retry <id>` (`$SM unfail <id>`,
   `$SM set <id> attempts=0`).
 

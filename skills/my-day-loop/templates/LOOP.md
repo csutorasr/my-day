@@ -25,7 +25,7 @@ reviewBatchNotify: 3
 
 # Loop
 
-State CLI: `~/.claude/skills/my-day-loop/bin/state.mjs` (`$SM` below; write the full path in each call).
+State CLI: `bin/state.mjs` of the my-day plugin's `my-day-loop` skill (`$SM` below; the skills give the full path).
 
 ## Tick priority
 1. Merge-ready MRs (`MERGE-GATES.md`)

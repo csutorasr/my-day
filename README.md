@@ -71,22 +71,26 @@ flowchart LR
 
 ## Install
 
-```bash
-git clone git@github.com:csutorasr/my-day.git
-cd my-day
-./install.sh            # symlinks skills/* into ~/.claude/skills and installs the dashboard's web-push dependency
+In Claude Code:
+
+```
+/plugin marketplace add csutorasr/my-day
+/plugin install my-day@csutorasr
 ```
 
-`install.sh` backs up any existing `~/.claude/skills/my-day-*` directory before linking.
-Web push is optional; without `web-push` installed the dashboard still works and shows
-notifications while the tab is open.
+(or from a shell: `claude plugin marketplace add csutorasr/my-day && claude plugin install my-day@csutorasr`).
+The repository is private for now, so this needs git access to it.
+
+Skills are namespaced by the plugin: `/my-day:my-day-loop`, `my-day:my-day-setup`, ….
+Web push is optional — setup offers to install its one dependency (`web-push`); without it
+the dashboard still notifies while its tab is open.
 
 ## First run
 
 In the root of the workspace you want the loop to work on:
 
 ```
-/my-day-loop
+/my-day:my-day-loop
 ```
 
 With no `.my-day/` yet, `my-day-setup` interviews you (one question at a time, proposing what

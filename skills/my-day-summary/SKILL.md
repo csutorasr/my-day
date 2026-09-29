@@ -5,7 +5,7 @@ description: Use when the user asks what my-day did or is doing - "summary", "wh
 
 # my-day summary
 
-`$SM` = `~/.claude/skills/my-day-loop/bin/state.mjs` (full path, run from the workspace root).
+`$SM` = `${CLAUDE_PLUGIN_ROOT}/skills/my-day-loop/bin/state.mjs` (full path, run from the workspace root).
 
 - Summary: `$SM summary [--today|--yesterday|--since D|--from D --to D]` (default today).
   Report tightly: merged, in review, running agents, failed (links or the elaborate hint),

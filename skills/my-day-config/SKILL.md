@@ -5,7 +5,7 @@ description: Use while the my-day loop runs, whenever the user's answer or instr
 
 # my-day config update
 
-`$SM` = `~/.claude/skills/my-day-loop/bin/state.mjs` (full path in every Bash call).
+`$SM` = `${CLAUDE_PLUGIN_ROOT}/skills/my-day-loop/bin/state.mjs` (full path in every Bash call).
 Read the current config with `$SM config show <NAME>` / `$SM config all`.
 
 A decision that only lives in the state DB or in this conversation is lost next session and
