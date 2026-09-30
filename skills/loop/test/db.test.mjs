@@ -42,6 +42,30 @@ test('setFields merges data and logs status changes', () => {
   assert.throws(() => S.setFields(db, 'bug-99', { status: 'x' }), /no item/);
 });
 
+test('upsert and set accept repos as array or comma string', () => {
+  const { db } = fresh();
+  const { id } = S.upsertItem(db, { type: 'bug', ext: 'jira:ABC-7', repos: 'api, web' });
+  assert.deepEqual(S.getItem(db, id).repos, ['api', 'web']);
+  S.upsertItem(db, { type: 'bug', ext: 'jira:ABC-7', repos: 'api' });
+  assert.deepEqual(S.getItem(db, id).repos, ['api']);
+  assert.deepEqual(S.setFields(db, id, { repos: 'a,b' }).repos, ['a', 'b']);
+  assert.deepEqual(S.setFields(db, id, { repos: '' }).repos, []);
+});
+
+test('deleteItem removes the item and its links, detaches children and questions', () => {
+  const { db } = fresh();
+  const parent = S.upsertItem(db, { type: 'story', ext: 'jira:ABC-1' }).id;
+  const child = S.upsertItem(db, { type: 'subtask', ext: 'jira:ABC-2', parent }).id;
+  S.addLink(db, parent, { kind: 'mr', url: 'https://example.invalid/1' });
+  const q = S.ask(db, parent, 'q?');
+  S.deleteItem(db, parent);
+  assert.equal(S.getItem(db, parent), null);
+  assert.equal(S.getItem(db, child).parent_id, null);
+  assert.equal(S.listQuestions(db).find((x) => x.id === q).item_id, null);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM links').get().n, 0);
+  assert.throws(() => S.deleteItem(db, parent));
+});
+
 test('fail / unfail and attempts', () => {
   const { db } = fresh();
   const { id } = S.upsertItem(db, { type: 'bug', ext: 'jira:ABC-4' });

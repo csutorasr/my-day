@@ -86,6 +86,9 @@ function event(db, itemId, kind, message, data, ts = now()) {
     .run(ts, itemId ?? null, kind, message, data === undefined ? null : JSON.stringify(data));
 }
 
+// Accepts an array or a comma-separated string, so upsert-many JSON can pass either.
+const toRepos = (r) => (Array.isArray(r) ? r : String(r).split(',').map((s) => s.trim()).filter(Boolean));
+
 export function upsertItem(db, { type, ext, title, url, status, parent, repos, data }) {
   if (!TYPES.includes(type)) throw new Error(`unknown type ${type} (expected ${TYPES.join('|')})`);
   if (!ext) throw new Error('ext key required, e.g. jira:ABC-123 or gitlab:group/repo!12');
@@ -96,16 +99,29 @@ export function upsertItem(db, { type, ext, title, url, status, parent, repos, d
       const merged = { ...JSON.parse(existing.data), ...(data ?? {}) };
       db.prepare(`UPDATE items SET title = coalesce(?, title), url = coalesce(?, url),
                   parent_id = coalesce(?, parent_id), repos = coalesce(?, repos), data = ?, updated_at = ? WHERE id = ?`)
-        .run(title ?? null, url ?? null, parent ?? null, repos ? JSON.stringify(repos) : null, JSON.stringify(merged), ts, existing.id);
+        .run(title ?? null, url ?? null, parent ?? null, repos ? JSON.stringify(toRepos(repos)) : null, JSON.stringify(merged), ts, existing.id);
       return { id: existing.id, created: false };
     }
     const id = nextId(db, type);
     db.prepare(`INSERT INTO items(id, type, ext_key, title, url, status, parent_id, repos, data, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, type, ext, title ?? null, url ?? null, status ?? 'new', parent ?? null,
-        JSON.stringify(repos ?? []), JSON.stringify(data ?? {}), ts, ts);
+        JSON.stringify(repos ? toRepos(repos) : []), JSON.stringify(data ?? {}), ts, ts);
     event(db, id, 'created', `${id} ${title ?? ext}`);
     return { id, created: true };
+  });
+}
+
+// Removes an item with its links; questions and child items stay, detached. Events are kept as history.
+export function deleteItem(db, id) {
+  return tx(db, () => {
+    const item = mustGet(db, id);
+    db.prepare('UPDATE items SET parent_id = NULL WHERE parent_id = ? AND id != ?').run(item.id, item.id);
+    db.prepare('UPDATE questions SET item_id = NULL WHERE item_id = ?').run(item.id);
+    db.prepare('DELETE FROM links WHERE item_id = ?').run(item.id);
+    db.prepare('DELETE FROM items WHERE id = ?').run(item.id);
+    event(db, item.id, 'deleted', `${item.id} ${item.title ?? item.ext_key}`);
+    return item;
   });
 }
 
@@ -133,7 +149,7 @@ export function setFields(db, id, fields) {
         data = { ...data, [key.slice(5)]: raw };
         dataChanged = true;
       } else if (COLUMNS.includes(key)) {
-        const value = key === 'repos' && Array.isArray(raw) ? JSON.stringify(raw) : raw;
+        const value = key === 'repos' ? JSON.stringify(raw === '' ? [] : toRepos(raw)) : raw;
         sets.push(`${key} = ?`);
         args.push(value === '' ? null : value);
       } else {

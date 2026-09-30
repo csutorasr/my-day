@@ -55,3 +55,13 @@ test('upsert-many is idempotent and reports created flags', () => {
   assert.deepEqual(second.map((r) => r.created), [false, false]);
   assert.deepEqual(first.map((r) => r.id), second.map((r) => r.id));
 });
+
+test('delete removes items by id and --closed sweeps terminal ones', () => {
+  const a = run('upsert', '--type', 'bug', '--ext', 'jira:DEL-1', '--status', 'ignored').split(' ')[0];
+  const b = run('upsert', '--type', 'bug', '--ext', 'jira:DEL-2').split(' ')[0];
+  const c = run('upsert', '--type', 'bug', '--ext', 'jira:DEL-3').split(' ')[0];
+  assert.equal(run('delete', b), `deleted ${b}`);
+  assert.equal(spawnSync(process.execPath, [CLI, 'get', b], { env: { ...process.env, MY_DAY_DIR: dir } }).status, 1);
+  assert.ok(run('delete', '--closed', '--type', 'bug').split(' ').includes(a));
+  assert.ok(run('get', c).includes('jira:DEL-3'));
+});

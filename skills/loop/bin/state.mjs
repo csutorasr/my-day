@@ -26,6 +26,7 @@ Items      upsert --type bug|story|subtask|mr|review --ext <jira:KEY|gitlab:path
            get <id|ext> | show <id> | list [--type] [--status] [--failed]
            set <id> key=value …      (status, title, url, branch, worktree, agent_id, parent_id,
                                       repos, attempts, data.<key>; value '' clears)
+           delete <id|ext> … | delete --closed [--type t]   remove items (links too; events kept)
            attempt <id>              (attempts++)
            fail <id> --reason "…" | unfail <id>
            link <id> --kind mr|pipeline|jira|spec|other --url <url> [--label]
@@ -183,6 +184,15 @@ try {
       }
       const it = S.setFields(db(), resolveId(ref), fields);
       opt.json ? out(it) : out(fmtItem(it));
+      break;
+    }
+    case 'delete': {
+      const ids = opt.closed
+        ? S.listItems(db(), { type: opt.type }).filter((i) => S.CLOSED_STATUSES.includes(i.status)).map((i) => i.id)
+        : args.map(resolveId);
+      if (!ids.length && !opt.closed) die('delete needs <id> … or --closed');
+      for (const id of ids) S.deleteItem(db(), id);
+      opt.json ? out(ids) : out(ids.length ? `deleted ${ids.join(' ')}` : '(none)');
       break;
     }
     case 'attempt':
