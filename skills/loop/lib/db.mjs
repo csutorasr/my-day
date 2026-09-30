@@ -2,6 +2,8 @@
 import { DatabaseSync } from 'node:sqlite';
 
 export const TYPES = ['bug', 'story', 'subtask', 'mr', 'review'];
+// Terminal statuses: no further work, kept only for history. The dashboard reads this list from /api/state.
+export const CLOSED_STATUSES = ['merged', 'closed', 'done', 'skipped', 'ignored'];
 const COLUMNS = ['title', 'url', 'status', 'repos', 'branch', 'worktree', 'agent_id', 'parent_id', 'attempts'];
 
 const MIGRATIONS = [

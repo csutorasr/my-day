@@ -39,6 +39,7 @@ function state() {
   return {
     dir,
     dryRun: settings.dryRun,
+    closedStatuses: S.CLOSED_STATUSES,
     push: push.enabled,
     items,
     reviews: items.filter((i) => i.type === 'review' && !['done', 'skipped'].includes(i.status)),

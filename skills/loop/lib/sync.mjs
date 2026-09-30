@@ -6,7 +6,7 @@ import * as gitlab from './forge/gitlab.mjs';
 import * as github from './forge/github.mjs';
 
 const PROVIDERS = { gitlab, github };
-const CLOSED = new Set(['merged', 'closed', 'done', 'skipped', 'ignored']);
+const CLOSED = new Set(S.CLOSED_STATUSES);
 const RECHECK_MS = 30 * 60 * 1000;
 const clip = (s, n) => (s.length > n ? `${s.slice(0, n)}…` : s);
 

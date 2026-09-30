@@ -2,7 +2,6 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const TYPE_ORDER = ['mr', 'bug', 'story', 'subtask', 'review'];
 const TYPE_LABEL = { mr: 'Merge requests', bug: 'Bugs', story: 'Stories', subtask: 'Subtasks', review: 'Reviews' };
-const CLOSED = new Set(['done', 'merged', 'skipped', 'closed']);
 let range = { today: '1' };
 
 const links = (i) =>
@@ -31,6 +30,7 @@ function render(s) {
     ? s.failed.map((f) => row(f, `<div class="reason">${esc(f.fail_reason)}</div>${f.hint ? `<div class="hint">${esc(f.hint)}</div>` : ''}`)).join('')
     : '<li class="empty">Nothing failed.</li>';
 
+  const CLOSED = new Set(s.closedStatuses);
   const open = s.items.filter((i) => !CLOSED.has(i.status) && i.type !== 'review');
   const closed = s.items.filter((i) => CLOSED.has(i.status) && i.type !== 'review');
   $('#c-tasks').textContent = open.length || '';

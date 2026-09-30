@@ -37,6 +37,12 @@ test('state lists the open review', async () => {
   assert.deepEqual(st.reviews.map((r) => r.id), [reviewId]);
 });
 
+test('state exposes the closed statuses, including ignored', async () => {
+  const st = await (await fetch(`${base}/api/state`)).json();
+  assert.deepEqual(st.closedStatuses, S.CLOSED_STATUSES);
+  assert.ok(st.closedStatuses.includes('ignored'));
+});
+
 test('cross-origin POST is rejected', async () => {
   const r = await fetch(`${base}/api/reviews/${reviewId}/done`, { method: 'POST', headers: { origin: 'https://evil.example' } });
   assert.equal(r.status, 403);

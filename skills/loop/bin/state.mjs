@@ -278,7 +278,7 @@ try {
       const items = S.listItems(db());
       // Items waiting on the user (open question) or blocked are not actionable until answered.
       const waiting = new Set(S.listQuestions(db(), { status: 'open' }).map((q) => q.item_id));
-      const open = items.filter((i) => !['merged', 'closed', 'done', 'skipped', 'ignored'].includes(i.status) && !i.failed);
+      const open = items.filter((i) => !S.CLOSED_STATUSES.includes(i.status) && !i.failed);
       const actionable = open.filter((i) => !waiting.has(i.id) && i.status !== 'blocked');
       const byVerdict = {};
       for (const m of actionable.filter((i) => i.type === 'mr' && !i.agent_id)) {
