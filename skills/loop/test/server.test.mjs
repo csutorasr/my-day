@@ -19,6 +19,7 @@ const freePort = () =>
 const port = await freePort();
 const db = S.openDb(join(dir, 'state.db'));
 const { id: reviewId } = S.upsertItem(db, { type: 'review', ext: 'gitlab:x!1', title: 'Review me', url: 'https://g/x/1' });
+S.upsertItem(db, { type: 'review', ext: 'gitlab:x!2', title: 'Handled by others', status: 'covered' });
 const base = `http://127.0.0.1:${port}`;
 after(() => ctl.stop(dir));
 
@@ -32,7 +33,7 @@ test('starts, reports health and push flag', async () => {
   assert.equal(again.started, false);
 });
 
-test('state lists the open review', async () => {
+test('state lists the open review, not covered ones', async () => {
   const st = await (await fetch(`${base}/api/state`)).json();
   assert.deepEqual(st.reviews.map((r) => r.id), [reviewId]);
 });

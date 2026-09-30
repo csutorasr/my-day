@@ -76,12 +76,33 @@ export function mr(project, iid, { aiReviewer }) {
   };
 }
 
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// My approval/comments since the request, plus what other reviewers already decided
+// and when my review was last (re)requested.
 export function reviewStatus(project, iid, { since }) {
   const base = `projects/${enc(project)}/merge_requests/${iid}`;
   const user = me();
-  const approvedByMe = (api(`${base}/approvals`).approved_by ?? []).some((a) => a.user.username === user);
-  const mine = api(`${base}/notes?sort=desc&per_page=100`).filter((n) => !n.system && n.author.username === user && (!since || n.created_at > since));
-  return { approvedByMe, myNotesSince: mine.length, lastMyNoteAt: mine[0]?.created_at ?? null, done: approvedByMe || mine.length > 0 };
+  const approvals = api(`${base}/approvals`);
+  const approvers = (approvals.approved_by ?? []).map((a) => a.user.username);
+  const approvedByMe = approvers.includes(user);
+  const others = api(`${base}/reviewers`).filter((r) => r.user.username !== user);
+  const othersVerdict = others.some((r) => r.state === 'requested_changes')
+    ? 'changes'
+    : others.some((r) => r.state === 'approved') || approvers.some((u) => u !== user) ? 'approved' : null;
+  const notes = api(`${base}/notes?sort=desc&per_page=100`);
+  const mine = notes.filter((n) => !n.system && n.author.username === user && (!since || n.created_at > since));
+  const requestedMe = new RegExp(`requested review from .*@${escRe(user)}(?![\\w-]|\\.\\w)`);
+  const lastRequestedAt = notes.find((n) => n.system && requestedMe.test(n.body))?.created_at ?? null;
+  return {
+    approvedByMe,
+    myNotesSince: mine.length,
+    lastMyNoteAt: mine[0]?.created_at ?? null,
+    done: approvedByMe || mine.length > 0,
+    othersVerdict,
+    approvalsLeft: typeof approvals.approvals_left === 'number' ? approvals.approvals_left : null,
+    lastRequestedAt,
+  };
 }
 
 // opened | merged | closed

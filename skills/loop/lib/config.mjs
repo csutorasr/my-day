@@ -36,6 +36,7 @@ export const DEFAULTS = {
   aiReviewer: '', // bot account whose review comments count as AI review
   targetBranch: 'main',
   reviewBatchNotify: 3, // more new review requests than this → one summary notification
+  hideCoveredReviews: false, // hide review requests others already approved / requested changes on
 };
 
 const read = (file) => (existsSync(file) ? readFileSync(file, 'utf8') : null);

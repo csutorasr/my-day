@@ -53,11 +53,12 @@ function fakeProvider() {
     reviewList: [mr('g/api!5'), mr('g/api!6')],
     states: { 2: 'merged' },
     approved: new Set(),
+    status: {}, // per-iid reviewStatus overrides
     mine() { return p.mineList; },
     reviews() { return p.reviewList; },
     mr(project, iid) { return { ...mr(`${project}!${iid}`), ...base, approved: false, unresolved: [{ discussionId: 'd', author: 'bot', fromAi: true, body: 'x'.repeat(500) }], pipeline: { status: 'success', url: 'https://g/p/1' } }; },
     state(project, iid) { return p.states[iid] ?? 'opened'; },
-    reviewStatus(project, iid) { const a = p.approved.has(iid); return { approvedByMe: a, done: a }; },
+    reviewStatus(project, iid) { const a = p.approved.has(iid); return { approvedByMe: a, done: a, othersVerdict: null, approvalsLeft: null, lastRequestedAt: null, ...p.status[iid] }; },
   };
   return p;
 }
@@ -84,6 +85,60 @@ test('sync: MRs get verdicts, parents and vanish on merge; reviews batch-notify 
   assert.deepEqual(d2.reviews.done, [S.getItem(db, 'gitlab:g/api!5').id]);
   assert.deepEqual(d2.reviews.gone, [S.getItem(db, 'gitlab:g/api!6').id]);
   assert.equal(d2.mrs.new.length, 0);
+});
+
+function coveredSetup(hideCoveredReviews = true) {
+  const db = S.openDb(join(mkdtempSync(join(tmpdir(), 'myday-cov-')), 'state.db'));
+  const p = fakeProvider();
+  p.reviewList = [p.reviewList[0]];
+  p.status[5] = { othersVerdict: 'approved', approvalsLeft: 1, lastRequestedAt: '2026-09-01T00:00:00Z' };
+  const s = { ...settings, hideCoveredReviews };
+  const d = sync(db, s, { provider: p, now: Date.parse('2026-09-30T10:00:00Z') });
+  return { db, p, s, d, id: S.getItem(db, 'gitlab:g/api!5').id };
+}
+const kinds = (db, id) => S.listEvents(db, {}).filter((e) => e.item_id === id).map((e) => e.kind);
+
+test('sync: a review others already handled is covered, hidden and not notified', () => {
+  const { db, d, id } = coveredSetup();
+  const it = S.getItem(db, id);
+  assert.equal(it.status, 'covered');
+  assert.equal(it.data.coveredAt, '2026-09-30T10:00:00.000Z');
+  assert.deepEqual(d.reviews.covered, [id]);
+  assert.deepEqual(d.reviews.new, []);
+  assert.ok(kinds(db, id).includes('review-covered'));
+  assert.ok(!kinds(db, id).includes('review-requested'));
+  assert.ok(!S.CLOSED_STATUSES.includes('covered'));
+});
+
+test('sync: a covered review re-requested while approvals are left is back to new', () => {
+  const { db, p, s, id } = coveredSetup();
+  p.status[5] = { othersVerdict: 'approved', approvalsLeft: 1, lastRequestedAt: '2026-09-30T11:00:00Z' };
+  p.reviewList = [{ ...p.reviewList[0], updatedAt: 'u2' }];
+  const d = sync(db, s, { provider: p, now: Date.parse('2026-09-30T11:05:00Z') });
+  assert.equal(S.getItem(db, id).status, 'new');
+  assert.deepEqual(d.reviews.reopened, [id]);
+  assert.ok(S.listEvents(db, {}).some((e) => e.item_id === id && e.kind === 'review-requested' && /re-requested/.test(e.message)));
+  // Stays visible on the next check even though the others' verdict is still there.
+  p.reviewList = [{ ...p.reviewList[0], updatedAt: 'u3' }];
+  sync(db, s, { provider: p, now: Date.parse('2026-09-30T11:10:00Z') });
+  assert.equal(S.getItem(db, id).status, 'new');
+});
+
+test('sync: a covered review re-requested with no approvals left stays covered', () => {
+  const { db, p, s, id } = coveredSetup();
+  p.status[5] = { othersVerdict: 'approved', approvalsLeft: 0, lastRequestedAt: '2026-09-30T11:00:00Z' };
+  p.reviewList = [{ ...p.reviewList[0], updatedAt: 'u2' }];
+  const d = sync(db, s, { provider: p, now: Date.parse('2026-09-30T11:05:00Z') });
+  assert.equal(S.getItem(db, id).status, 'covered');
+  assert.deepEqual(d.reviews.reopened, []);
+});
+
+test('sync: hideCoveredReviews false keeps reviews others handled in the list', () => {
+  const { db, d, id } = coveredSetup(false);
+  assert.equal(S.getItem(db, id).status, 'new');
+  assert.deepEqual(d.reviews.new, [id]);
+  assert.deepEqual(d.reviews.covered, []);
+  assert.ok(kinds(db, id).includes('review-requested'));
 });
 
 import { reconcile, dispatch, parseResult } from '../lib/reconcile.mjs';

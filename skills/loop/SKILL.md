@@ -19,7 +19,8 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
 
 ## Tick
 1. `$SM tick` → `schedule`, `sync` (code-host delta), `act` (MR ids by verdict), `tickets`,
-   `running`, `reviewsPending`, `openQuestions`, `failed`. Code host and reviews are done.
+   `running`, `reviewsPending`, `openQuestions`, `failed`. Code host and reviews are done
+   (`covered` reviews, see QUERY-MY-REVIEWS.md, are not pending).
 2. Tracker: run the ticket queries in QUERY-MY-TASKS.md → `$SM upsert-many`; items gone
    from scope → `status=closed` + event. `awaiting-answers` tickets → look for replies.
    QUERY-INBOX.md only when step 4 finds nothing actionable.

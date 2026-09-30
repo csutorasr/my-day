@@ -34,6 +34,19 @@ const glab = fakeCli('glab', {
   ],
   'projects/grp%2Fapp%2Fapi/merge_requests/3/approvals': { approved_by: [{ user: { username: 'me' } }] },
   'projects/grp%2Fapp%2Fapi/merge_requests/3/notes?sort=desc&per_page=100': [],
+  'projects/grp%2Fapp%2Fapi/merge_requests/3/reviewers': [{ user: { username: 'me' }, state: 'approved' }],
+  'projects/grp%2Fapp%2Fapi/merge_requests/8/approvals': { approved_by: [{ user: { username: 'ann' } }], approvals_left: 1 },
+  'projects/grp%2Fapp%2Fapi/merge_requests/8/reviewers': [{ user: { username: 'me' }, state: 'unreviewed' }, { user: { username: 'bob' }, state: 'requested_changes' }],
+  'projects/grp%2Fapp%2Fapi/merge_requests/8/notes?sort=desc&per_page=100': [
+    { system: true, author: { username: 'bob' }, body: 'requested review from @ann, @meg and @me', created_at: '2026-09-29T12:00:00Z' },
+    { system: true, author: { username: 'bob' }, body: 'requested review from @meg', created_at: '2026-09-29T11:00:00Z' },
+    { system: true, author: { username: 'bob' }, body: 'requested review from @me', created_at: '2026-09-29T10:00:00Z' },
+  ],
+  'projects/grp%2Fapp%2Fapi/merge_requests/9/approvals': { approved_by: [{ user: { username: 'ann' } }], approvals_left: 0 },
+  'projects/grp%2Fapp%2Fapi/merge_requests/9/reviewers': [{ user: { username: 'me' }, state: 'unreviewed' }],
+  'projects/grp%2Fapp%2Fapi/merge_requests/9/notes?sort=desc&per_page=100': [
+    { system: true, author: { username: 'bob' }, body: 'requested review from @meg', created_at: '2026-09-29T11:00:00Z' },
+  ],
 });
 const gl = (...a) => JSON.parse(execFileSync(process.execPath, [BIN, '--provider', 'gitlab', ...a], { env: { ...process.env, GLAB_BIN: glab }, encoding: 'utf8' }));
 
@@ -58,7 +71,23 @@ test('gitlab: mr details expose gates and unresolved discussions only', () => {
 });
 
 test('gitlab: review-status detects my approval', () => {
-  assert.equal(gl('review-status', 'grp/app/api', '3').done, true);
+  const rs = gl('review-status', 'grp/app/api', '3');
+  assert.equal(rs.done, true);
+  assert.equal(rs.othersVerdict, null);
+  assert.equal(rs.approvalsLeft, null);
+  assert.equal(rs.lastRequestedAt, null);
+});
+
+test('gitlab: review-status reports what others decided and when I was last requested', () => {
+  const changes = gl('review-status', 'grp/app/api', '8');
+  assert.equal(changes.done, false);
+  assert.equal(changes.othersVerdict, 'changes');
+  assert.equal(changes.approvalsLeft, 1);
+  assert.equal(changes.lastRequestedAt, '2026-09-29T12:00:00Z');
+  const approved = gl('review-status', 'grp/app/api', '9');
+  assert.equal(approved.othersVerdict, 'approved');
+  assert.equal(approved.approvalsLeft, 0);
+  assert.equal(approved.lastRequestedAt, null); // @meg is not @me
 });
 
 // ---------- GitHub
@@ -86,6 +115,13 @@ const gh = fakeCli('gh', {
   ] } } } } },
   'repos/acme/api/pulls/7/reviews?per_page=100': [],
   'repos/acme/api/issues/7/comments?per_page=100': [{ user: { login: 'me' }, created_at: '2026-09-30T08:00:00Z' }],
+  'repos/acme/api/issues/7/timeline?per_page=100': [],
+  'repos/acme/web/issues/5/comments?per_page=100': [],
+  'repos/acme/web/issues/5/timeline?per_page=100': [
+    { event: 'review_requested', requested_reviewer: { login: 'me' }, created_at: '2026-09-29T08:00:00Z' },
+    { event: 'review_requested', requested_reviewer: { login: 'me' }, created_at: '2026-09-29T12:00:00Z' },
+    { event: 'review_requested', requested_reviewer: { login: 'bob' }, created_at: '2026-09-29T13:00:00Z' },
+  ],
 });
 const hub = (...a) => JSON.parse(execFileSync(process.execPath, [BIN, '--provider', 'github', ...a], { env: { ...process.env, GH_BIN: gh }, encoding: 'utf8' }));
 
@@ -114,6 +150,13 @@ test('github: mr normalizes merge state, approvals, checks and threads', () => {
 test('github: review-status counts my comments after since', () => {
   assert.equal(hub('review-status', 'acme/api', '7', '--since', '2026-09-29T00:00:00Z').done, true);
   assert.equal(hub('review-status', 'acme/api', '7', '--since', '2026-10-01T00:00:00Z').done, false);
+});
+
+test('github: review-status takes the latest review of others and my last request', () => {
+  const rs = hub('review-status', 'acme/web', '5');
+  assert.equal(rs.othersVerdict, 'approved'); // bob's CHANGES_REQUESTED was superseded
+  assert.equal(rs.approvalsLeft, null);
+  assert.equal(rs.lastRequestedAt, '2026-09-29T12:00:00Z');
 });
 
 test('ticket pattern is configurable', () => {

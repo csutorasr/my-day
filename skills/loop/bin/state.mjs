@@ -302,7 +302,7 @@ try {
         tickets: actionable.filter((i) => ['bug', 'story', 'subtask'].includes(i.type) && !i.agent_id).map((i) => `${i.id}:${i.status}`),
         waitingOnUser: [...waiting].filter(Boolean),
         running: items.filter((i) => i.agent_id).map((i) => `${i.id}:${i.agent_id}`),
-        reviewsPending: open.filter((i) => i.type === 'review').length,
+        reviewsPending: open.filter((i) => i.type === 'review' && i.status !== 'covered').length,
         openQuestions: S.listQuestions(db(), { status: 'open' }).map((q) => q.id),
         failed: items.filter((i) => i.failed).map((i) => i.id),
       });

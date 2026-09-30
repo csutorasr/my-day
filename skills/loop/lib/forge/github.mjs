@@ -117,14 +117,36 @@ export function mr(project, number, { aiReviewer }) {
   };
 }
 
+// My approval/comments since the request, plus the latest verdict of other reviewers and when
+// my review was last (re)requested. GitHub has no "approvals left" count.
 export function reviewStatus(project, number, { since }) {
   const user = me();
   const after = (ts) => !since || ts > since;
-  const myReviews = api(`repos/${project}/pulls/${number}/reviews?per_page=100`).filter((r) => r.user.login === user && after(r.submitted_at));
+  const allReviews = api(`repos/${project}/pulls/${number}/reviews?per_page=100`);
+  const myReviews = allReviews.filter((r) => r.user.login === user && after(r.submitted_at));
   const myComments = api(`repos/${project}/issues/${number}/comments?per_page=100`).filter((c) => c.user.login === user && after(c.created_at));
   const approvedByMe = myReviews.some((r) => r.state === 'APPROVED');
   const stamps = [...myReviews.map((r) => r.submitted_at), ...myComments.map((c) => c.created_at)].sort().reverse();
-  return { approvedByMe, myNotesSince: stamps.length, lastMyNoteAt: stamps[0] ?? null, done: approvedByMe || stamps.length > 0 };
+  const latest = new Map();
+  for (const r of allReviews) if (r.user.login !== user && ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)) latest.set(r.user.login, r.state);
+  const verdicts = [...latest.values()];
+  const othersVerdict = verdicts.includes('CHANGES_REQUESTED') ? 'changes' : verdicts.includes('APPROVED') ? 'approved' : null;
+  // First page only (oldest first); a PR with more than 100 timeline events may report an older request.
+  const lastRequestedAt =
+    api(`repos/${project}/issues/${number}/timeline?per_page=100`)
+      .filter((e) => e.event === 'review_requested' && e.requested_reviewer?.login === user)
+      .map((e) => e.created_at)
+      .sort()
+      .at(-1) ?? null;
+  return {
+    approvedByMe,
+    myNotesSince: stamps.length,
+    lastMyNoteAt: stamps[0] ?? null,
+    done: approvedByMe || stamps.length > 0,
+    othersVerdict,
+    approvalsLeft: null,
+    lastRequestedAt,
+  };
 }
 
 // opened | merged | closed

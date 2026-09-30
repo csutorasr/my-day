@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 export const TYPES = ['bug', 'story', 'subtask', 'mr', 'review'];
 // Terminal statuses: no further work, kept only for history. The dashboard reads this list from /api/state.
+// A review's `covered` status (others already handled it) is deliberately open: sync keeps re-checking it.
 export const CLOSED_STATUSES = ['merged', 'closed', 'done', 'skipped', 'ignored'];
 const COLUMNS = ['title', 'url', 'status', 'repos', 'branch', 'worktree', 'agent_id', 'parent_id', 'attempts'];
 

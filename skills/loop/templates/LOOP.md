@@ -18,6 +18,7 @@ ticketPattern: '<TICKET_REGEX>'
 aiReviewer: <AI_REVIEWER_BOT>   # bot account of the AI review job, if any
 targetBranch: main
 reviewBatchNotify: 3
+hideCoveredReviews: false  # true = hide reviews others already handled, until re-requested with an approval still needed
 # Personal keys belong in LOOP.local.md: trackerAccountId, gitEmail
 ---
 

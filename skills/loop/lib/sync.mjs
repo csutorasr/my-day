@@ -22,7 +22,7 @@ export function sync(db, settings, { now = Date.now(), provider } = {}) {
   gitlab.setTicketPattern(settings.ticketPattern);
   const prefix = `${settings.forge}:`;
   const iso = new Date(now).toISOString();
-  const delta = { mrs: { new: [], changed: [], vanished: [] }, reviews: { new: [], done: [], reopened: [], gone: [] } };
+  const delta = { mrs: { new: [], changed: [], vanished: [] }, reviews: { new: [], done: [], reopened: [], covered: [], gone: [] } };
 
   // ---- my MRs/PRs
   const mine = p.mine({ group: settings.group });
@@ -75,6 +75,17 @@ export function sync(db, settings, { now = Date.now(), provider } = {}) {
   }
 
   // ---- review requests
+  // hideCoveredReviews: a request someone else already approved / requested changes on is
+  // `covered` (hidden) until my review is re-requested while an approval is still needed.
+  const hideCovered = settings.hideCoveredReviews === true;
+  const reRequested = (item, rs) => !!item.data.coveredAt && !!rs.lastRequestedAt && rs.lastRequestedAt > item.data.coveredAt;
+  const needsMe = (rs) => rs.approvalsLeft == null || rs.approvalsLeft > 0;
+  const covers = (item, rs) => hideCovered && !!rs.othersVerdict && !rs.approvedByMe && (!reRequested(item, rs) || !needsMe(rs));
+  const cover = (id, rs, title) => {
+    S.setFields(db, id, { status: 'covered', 'data.coveredAt': iso, 'data.othersVerdict': rs.othersVerdict });
+    S.addEvent(db, { itemId: id, kind: 'review-covered', message: `${id} already ${rs.othersVerdict === 'changes' ? 'has changes requested' : 'approved'} by others: ${title}` });
+    delta.reviews.covered.push(id);
+  };
   const reviews = p.reviews({ group: settings.group });
   const requested = new Set();
   const fresh = [];
@@ -87,6 +98,7 @@ export function sync(db, settings, { now = Date.now(), provider } = {}) {
       const rs = p.reviewStatus(m.project, m.iid, { since: iso });
       S.setFields(db, id, { 'data.requestedAt': iso, 'data.lastUpdatedAt': m.updatedAt, 'data.checkedAt': iso });
       if (rs.approvedByMe) S.setFields(db, id, { status: 'done' });
+      else if (covers(item, rs)) cover(id, rs, m.title);
       else { fresh.push(item); delta.reviews.new.push(id); }
       continue;
     }
@@ -99,10 +111,14 @@ export function sync(db, settings, { now = Date.now(), provider } = {}) {
     if (CLOSED.has(item.status) || !stale(item.data, m.updatedAt, now)) continue;
     const rs = p.reviewStatus(m.project, m.iid, { since: item.data.requestedAt ?? item.created_at });
     S.setFields(db, id, { 'data.checkedAt': iso, 'data.lastUpdatedAt': m.updatedAt });
-    if (rs.done) {
+    if (item.status === 'covered' && reRequested(item, rs) && needsMe(rs)) {
+      S.setFields(db, id, { status: 'new', 'data.requestedAt': rs.lastRequestedAt });
+      S.addEvent(db, { itemId: id, kind: 'review-requested', message: `${id} re-requested, approval still needed: ${m.title}` });
+      delta.reviews.reopened.push(id);
+    } else if (rs.done) {
       S.setFields(db, id, { status: 'done' });
       delta.reviews.done.push(id);
-    }
+    } else if (item.status !== 'covered' && covers(item, rs)) cover(id, rs, m.title);
   }
   if (fresh.length > settings.reviewBatchNotify) {
     for (const it of fresh) S.addEvent(db, { itemId: it.id, kind: 'review-queued', message: `${it.id} ${it.title}` });

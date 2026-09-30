@@ -42,7 +42,7 @@ function state() {
     closedStatuses: S.CLOSED_STATUSES,
     push: push.enabled,
     items,
-    reviews: items.filter((i) => i.type === 'review' && !['done', 'skipped'].includes(i.status)),
+    reviews: items.filter((i) => i.type === 'review' && !['done', 'skipped', 'covered'].includes(i.status)),
     failed: items.filter((i) => i.failed).map(withHint),
     questions: S.listQuestions(db, { status: 'open' }),
     recent: S.listEvents(db, { limit: 50 }),
