@@ -59,6 +59,7 @@ flowchart LR
 | `my-day:config` | Turns standing decisions made while the loop runs ("ignore ABC-50", "never merge on Fridays") into config edits. |
 | `my-day:worker` | Background agent: `develop`, `bug`, `review-fix`, `pipeline-fix`, `rebase` — each on its own git worktree. |
 | `my-day:summary` | "What happened today?", failures, `elaborate <id>`. |
+| `my-day:dream` | Periodic local reflection (`dreamSchedule`, e.g. weekly): reads the loop's history, writes a report to `.my-day/dreams/`, proposes config edits for approval, flags team and tooling issues. Never runs in the cloud. |
 
 ## Requirements
 
@@ -105,7 +106,7 @@ optional `X.local.md` next to it holds personal overrides and is gitignored.
 
 | File | Defines |
 |---|---|
-| `LOOP.md` | Cadence, working hours, parallel agents, retry limit, dry run — plus the scope the Node side reads: `tracker`, `forge`, `group`, `ticketPattern`, `aiReviewer`, `targetBranch` |
+| `LOOP.md` | Cadence, working hours, parallel agents, retry limit, dry run, `dreamSchedule` — plus the scope the Node side reads: `tracker`, `forge`, `group`, `ticketPattern`, `aiReviewer`, `targetBranch` |
 | `QUERY-MY-TASKS.md` | Tracker queries for your tickets; ignored bucket tickets |
 | `QUERY-MY-REVIEWS.md` | Review-queue behaviour (the sync itself is automatic) |
 | `QUERY-INBOX.md` / `TRIAGE.md` | Unassigned work and how to triage it |
@@ -114,6 +115,7 @@ optional `X.local.md` next to it holds personal overrides and is gitignored.
 | `FIX-REVIEW.md` | How review comments are classified and answered |
 | `MERGE-GATES.md` | Gates, merge method, rebase and force-push rules, merge trains |
 | `POST-MR.md` | Pipeline handling, reviewer selection, ticket transitions |
+| `DREAM.md` (optional) | Checks `my-day:dream` runs over the loop's history; defaults to the template |
 
 Add to `.gitignore`:
 
@@ -123,6 +125,7 @@ Add to `.gitignore`:
 .my-day/.vapid.json
 .my-day/server.pid
 .my-day/server.log
+.my-day/dreams/
 .worktrees/
 ```
 
@@ -146,6 +149,7 @@ CLI, `skills/loop/bin/state.mjs`, backed by SQLite in `.my-day/state.db`:
 | `bootstrap` | Config check, DB, dashboard server, orphaned agents |
 | `tick` | Code-host sync (MRs + review requests), merge-gate verdicts, schedule, compact to-do JSON |
 | `dispatch` / `reconcile` | Worker bookkeeping: attempts, links, new MRs, retry limit → escalation |
+| `dream-data` / `dream-done` | History bundle for a dream; record `lastDreamAt` |
 | `summary`, `show`, `list`, `ask`, `answer`, … | State queries and updates (`state.mjs help`) |
 
 `bin/forge.mjs` reads GitLab (`glab`) and GitHub (`gh`) with one output shape. The

@@ -66,17 +66,22 @@ One question at a time, proposing a default:
 - AI reviewer: job name and bot account, if any (FIX-REVIEW, POST-MR).
 - Reviewers by repo/domain, from the roster (POST-MR).
 - Ticket transitions after MR open / after merge (POST-MR).
+- "Enable weekly dreaming? When?" — a local reflection run (`my-day:dream`) that reads the
+  loop's history and proposes config and team improvements. Propose `Fri 16:00` (inside
+  working hours); the answer → `dreamSchedule` in `LOOP.local.md`, `''` = off. Yes → also
+  offer DREAM.md (step 5).
 
 ## 5. Write the files
 For each missing file in `LOOP.md` → QUERY-* → TRIAGE → WORKFLOW-* → DEVELOP → FIX-REVIEW →
-MERGE-GATES → POST-MR order:
+MERGE-GATES → POST-MR → DREAM order (DREAM.md is optional: write it only when dreaming is
+enabled or the user wants it; without it the dream uses the template defaults):
 - Start from the template, replace every `<PLACEHOLDER>`, and rewrite tool-specific parts
   for the chosen tracker and code host (tracker queries, transition/assign/comment commands;
   code-host commands per the table below). Delete sections that don't apply (e.g. ticket
   workflows in MR-only mode).
 - Show the result, run its queries once, then save. Remove the `<!-- TEMPLATE … -->` line.
 - Personal data (account ids, emails, `dryRun`, port, `maxAgents`) → `LOOP.local.md`
-  (`trackerAccountId`, `gitEmail`), never the shared files. Shared queries use
+  (`trackerAccountId`, `gitEmail`, `dreamSchedule`), never the shared files. Shared queries use
   "current user" forms (`currentUser()`, `@me`, `@Me`).
 
 ## 6. Ignores
@@ -88,6 +93,7 @@ In a git repo root append to `.gitignore` (ask before editing a tracked file; ot
 .my-day/.vapid.json
 .my-day/server.pid
 .my-day/server.log
+.my-day/dreams/
 .worktrees/
 ```
 Web push (optional): `npm install --prefix ${CLAUDE_PLUGIN_ROOT}/skills/loop/server --no-audit --no-fund`

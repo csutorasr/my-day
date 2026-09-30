@@ -64,3 +64,12 @@ test('front matter keeps quoted values and strips only real comments', () => {
   assert.equal(s.group, 'acme/');
   assert.equal(s.aiReviewer, 'bot#1');
 });
+
+test('dreamSchedule defaults to off and reads from LOOP.local.md; DREAM is optional', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'myday-cfg-'));
+  writeFileSync(join(dir, 'LOOP.md'), "---\ndreamSchedule:            # e.g. Fri 17:00\nmaxAgents: 2\n---\n");
+  assert.equal(loopSettings(dir).dreamSchedule, '');
+  writeFileSync(join(dir, 'LOOP.local.md'), '---\ndreamSchedule: Fri 17:00   # weekly\n---\n');
+  assert.equal(loopSettings(dir).dreamSchedule, 'Fri 17:00');
+  assert.ok(!REQUIRED.includes('DREAM'));
+});

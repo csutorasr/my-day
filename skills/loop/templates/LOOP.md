@@ -19,6 +19,7 @@ aiReviewer: <AI_REVIEWER_BOT>   # bot account of the AI review job, if any
 targetBranch: main
 reviewBatchNotify: 3
 hideCoveredReviews: false  # true = hide reviews others already handled, until re-requested with an approval still needed
+dreamSchedule: ''          # weekly local reflection (my-day:dream), e.g. Fri 17:00 or Mon,Thu 09:30; '' = off
 # Personal keys belong in LOOP.local.md: trackerAccountId, gitEmail
 ---
 
@@ -36,6 +37,7 @@ State CLI: `bin/state.mjs` of the my-day plugin's `loop` skill (`$SM` below; the
 5. My stories / tasks / subtasks (`WORKFLOW-STORY.md`, `WORKFLOW-SUBTASK.md`)
 6. Review requests for me (`QUERY-MY-REVIEWS.md`) — dashboard notification only
 7. Inbox triage (`TRIAGE.md`) — only when 1–5 have nothing actionable
+8. Dream (`schedule.dreamDue`) — `my-day:dream` in this session, when no brainstorm is running
 
 ## Outside working hours
 Refresh (read-only) is fine; no dispatches, brainstorms or outward writes. Wakeups are capped at

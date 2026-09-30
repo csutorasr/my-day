@@ -29,7 +29,8 @@ Unsure → ask: "Make this a standing rule?"
 | review comments, AI reviewer identity, push-back rules | `FIX-REVIEW.md` |
 | merging, gates, rebase, force-push, trains | `MERGE-GATES.md` |
 | pipeline handling, reviewers, ticket transitions | `POST-MR.md` |
-| cadence, hours, limits, notifications volume | `LOOP.md` |
+| cadence, hours, limits, notifications volume, dream schedule | `LOOP.md` |
+| what a dream checks for | `DREAM.md` (optional; create from the template) |
 
 ## 3. Shared or personal?
 - Team rule (everyone using this workspace should behave this way) → `X.md` (committed).

@@ -37,7 +37,7 @@ export function reconcile(db, id, raw, { retryLimit }) {
     if (ref) mrId = S.upsertItem(db, { type: 'mr', ext: ref.ext, url: r.mrUrl, parent: id, data: { project: ref.project, iid: ref.iid } }).id;
   }
   for (const l of r.links ?? []) if (l?.url) S.addLink(db, id, { kind: l.kind ?? 'other', url: l.url, label: l.label });
-  S.addEvent(db, { itemId: id, kind: 'worker', message: `${id} ${r.status}: ${r.summary ?? ''}`.trim(), data: { commits: r.commits, blockers: r.blockers, handled: r.handled } });
+  S.addEvent(db, { itemId: id, kind: 'worker', message: `${id} ${r.status}: ${r.summary ?? ''}`.trim(), data: { status: r.status, commits: r.commits, blockers: r.blockers, handled: r.handled } });
 
   if (r.status === 'done') return { id, status: 'done', next: 'advance', mrId };
   const { attempts } = S.getItem(db, id);

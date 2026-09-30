@@ -18,7 +18,7 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
    the first tick right away.
 
 ## Tick
-1. `$SM tick` → `schedule`, `sync` (code-host delta), `act` (MR ids by verdict), `tickets`,
+1. `$SM tick` → `schedule` (incl. `dreamDue`), `sync` (code-host delta), `act` (MR ids by verdict), `tickets`,
    `running`, `reviewsPending`, `openQuestions`, `failed`. Code host and reviews are done
    (`covered` reviews, see QUERY-MY-REVIEWS.md, are not pending).
 2. Tracker: run the ticket queries in QUERY-MY-TASKS.md → `$SM upsert-many`; items gone
@@ -35,6 +35,9 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
      and planning steps run here, one brainstorm at a time (queue others as
      `brainstorm-queued`); code steps → `develop` / `bug` worker.
    - Nothing actionable → TRIAGE.md for inbox items.
+   - Last: `schedule.dreamDue` and no brainstorm running → run `my-day:dream` here in the
+     main session (never as a worker, never in the cloud: it needs the local DB and
+     `*.local.md`). A brainstorm in progress → leave it for the next tick.
 5. `$SM prune` once a day.
 6. `ScheduleWakeup`: prompt `/loop /my-day:loop`, `delaySeconds` = `schedule.delaySeconds`,
    `noop` = nothing changed.
@@ -56,7 +59,7 @@ Then `$SM dispatch <id> --agent <name> --status <new status>`. On completion:
   mirrors it. Ask with `$SM ask <id> "<q>"` and in chat as "q-4 · bug-2 (ABC-812 …): …";
   record with `$SM answer` / `$SM decline`; never re-ask; keep working meanwhile.
 - An answer or instruction that sets a standing rule → `my-day:config`.
-- `elaborate <id>` / `summary …` → `my-day:summary`. `pause` (no dispatch), `resume`,
+- `elaborate <id>` / `summary …` → `my-day:summary`. `dream` → `my-day:dream`. `pause` (no dispatch), `resume`,
   `stop` (`ScheduleWakeup stop`; server stays), `retry <id>` (`$SM unfail <id>`,
   `$SM set <id> attempts=0`).
 

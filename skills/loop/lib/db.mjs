@@ -7,7 +7,8 @@ export const TYPES = ['bug', 'story', 'subtask', 'mr', 'review'];
 export const CLOSED_STATUSES = ['merged', 'closed', 'done', 'skipped', 'ignored'];
 const COLUMNS = ['title', 'url', 'status', 'repos', 'branch', 'worktree', 'agent_id', 'parent_id', 'attempts'];
 
-const MIGRATIONS = [
+// Append-only: each entry runs once, in order, tracked by PRAGMA user_version.
+export const MIGRATIONS = [
   `CREATE TABLE items (
      id TEXT PRIMARY KEY,
      type TEXT NOT NULL,
@@ -37,6 +38,8 @@ const MIGRATIONS = [
    CREATE INDEX events_item ON events(item_id);
    CREATE TABLE counters (type TEXT PRIMARY KEY, next INTEGER NOT NULL);
    CREATE TABLE push_subscriptions (endpoint TEXT PRIMARY KEY, json TEXT NOT NULL, created_at TEXT NOT NULL);`,
+  // Loop-level key/value facts that belong to no item (e.g. lastDreamAt).
+  `CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);`,
 ];
 
 const now = () => new Date().toISOString();
@@ -285,6 +288,99 @@ export function addSubscription(db, sub) {
 }
 export const listSubscriptions = (db) => db.prepare('SELECT json FROM push_subscriptions').all().map((r) => JSON.parse(r.json));
 export const removeSubscription = (db, endpoint) => db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint);
+
+export const getMeta = (db, key) => db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value ?? null;
+export function setMeta(db, key, value) {
+  db.prepare('INSERT INTO meta(key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at')
+    .run(key, String(value), now());
+}
+
+// Everything my-day:dream reflects on, for events in [since, until).
+export function dreamData(db, { since, until = now() } = {}) {
+  const lastDreamAt = getMeta(db, 'lastDreamAt');
+  const from = since ?? lastDreamAt ?? new Date(new Date(until).getTime() - 7 * 86400000).toISOString();
+  const evs = listEvents(db, { from, to: until });
+  const inWindow = (ts) => ts && ts >= from && ts < until;
+  const itemsById = new Map(listItems(db).map((i) => [i.id, i]));
+  const brief = (i) => (i ? { id: i.id, type: i.type, title: i.title, url: i.url, status: i.status } : null);
+  const idsOf = (list) => list.map((e) => e.id);
+
+  const byKind = {};
+  const byItem = {};
+  for (const e of evs) {
+    (byKind[e.kind] ??= []).push({ id: e.id, ts: e.ts, item: e.item_id, message: e.message });
+    if (!e.item_id) continue;
+    const slot = (byItem[e.item_id] ??= { item: brief(itemsById.get(e.item_id)), kinds: {}, eventIds: [] });
+    slot.kinds[e.kind] = (slot.kinds[e.kind] ?? 0) + 1;
+    slot.eventIds.push(e.id);
+  }
+  const of = (kind) => evs.filter((e) => e.kind === kind);
+
+  const failedIds = new Set([...of('failed').map((e) => e.item_id), ...[...itemsById.values()].filter((i) => i.failed).map((i) => i.id)]);
+  const failed = [...failedIds].filter(Boolean).map((id) => {
+    const i = itemsById.get(id);
+    const failEvents = of('failed').filter((e) => e.item_id === id);
+    return {
+      ...brief(i) ?? { id },
+      failed: i?.failed ?? false,
+      fail_reason: i?.fail_reason ?? failEvents.at(-1)?.message ?? null,
+      attempts: i?.attempts ?? null,
+      eventIds: idsOf(failEvents),
+    };
+  });
+
+  const questions = db.prepare('SELECT * FROM questions WHERE (created_at >= ? AND created_at < ?) OR (answered_at >= ? AND answered_at < ?) ORDER BY CAST(substr(id, 3) AS INTEGER)')
+    .all(from, until, from, until);
+
+  const reconciles = evs.filter((e) => e.kind === 'worker' || e.kind === 'escalated').map((e) => ({
+    eventId: e.id, ts: e.ts, item: e.item_id, kind: e.kind,
+    status: e.data?.status ?? (e.kind === 'escalated' ? 'escalated' : /^\S+ (\S+):/.exec(e.message)?.[1] ?? null),
+    message: e.message,
+    ...(e.data ? { data: e.data } : {}),
+  }));
+
+  const dispatchedBy = {};
+  for (const e of of('dispatched')) (dispatchedBy[e.item_id] ??= []).push(e.id);
+  const attempts = Object.entries(dispatchedBy).map(([id, ids]) => ({
+    ...brief(itemsById.get(id)) ?? { id }, attempts: itemsById.get(id)?.attempts ?? null, dispatches: ids.length, eventIds: ids,
+  })).sort((a, b) => b.dispatches - a.dispatches);
+
+  // First merge per item: the loop's `merged` event or a status change to merged.
+  const mergedAt = new Map();
+  for (const e of evs) {
+    if (!e.item_id || mergedAt.has(e.item_id)) continue;
+    if (e.kind === 'merged' || (e.kind === 'status' && /→ merged$/.test(e.message))) mergedAt.set(e.item_id, e);
+  }
+  const cycleTimes = [...mergedAt].map(([id, e]) => {
+    const i = itemsById.get(id);
+    const created = i?.created_at ?? db.prepare("SELECT ts FROM events WHERE item_id = ? AND kind = 'created' ORDER BY id LIMIT 1").get(id)?.ts ?? null;
+    return {
+      ...brief(i) ?? { id }, created, merged: e.ts, eventId: e.id,
+      hours: created ? Math.round(((new Date(e.ts) - new Date(created)) / 3600000) * 10) / 10 : null,
+    };
+  });
+
+  const reviews = listItems(db, { type: 'review' })
+    .filter((i) => inWindow(i.created_at) || inWindow(i.updated_at) || !CLOSED_STATUSES.includes(i.status))
+    .map((i) => ({
+      ...brief(i), repos: i.repos, created: i.created_at, updated: i.updated_at,
+      requestedAt: i.data.requestedAt ?? null, project: i.data.project ?? null,
+      eventIds: byItem[i.id]?.eventIds ?? [],
+    }));
+
+  return {
+    window: { from, until, lastDreamAt },
+    counts: { events: evs.length, ...Object.fromEntries(Object.entries(byKind).map(([k, v]) => [k, v.length])) },
+    events: { byKind, byItem },
+    failed,
+    questions,
+    reconciles,
+    attempts,
+    cycleTimes,
+    reviews,
+    configChanges: of('config-changed').map((e) => ({ eventId: e.id, ts: e.ts, message: e.message })),
+  };
+}
 
 export const dataVersion = (db) => db.prepare('PRAGMA data_version').get().data_version;
 

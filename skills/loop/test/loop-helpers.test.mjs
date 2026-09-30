@@ -163,3 +163,38 @@ test('dispatch + reconcile: done links the MR, failures escalate at the retry li
   assert.equal(bad.next, 'escalate');
   assert.equal(S.getItem(db, id).failed, true);
 });
+
+import { dreamDue, lastDreamSlot } from '../lib/schedule.mjs';
+
+test('dream: due once the schedule passed since the last dream, inside working hours', () => {
+  const s = { ...settings, dreamSchedule: 'Fri 17:00' };
+  const friEve = new Date(2026, 9, 2, 17, 30); // Fri 17:30
+  assert.equal(dreamDue(s, null, friEve), true);
+  assert.equal(dreamDue(s, new Date(2026, 8, 25, 17, 10).toISOString(), friEve), true); // last week's
+  assert.equal(schedule(s, 0, friEve, { lastDreamAt: null }).dreamDue, true);
+  // Missed on Friday → still due on Monday morning.
+  assert.equal(dreamDue(s, new Date(2026, 8, 25, 17, 10).toISOString(), new Date(2026, 9, 5, 9, 0)), true);
+});
+
+test('dream: not due before the slot or after a dream since it', () => {
+  const s = { ...settings, dreamSchedule: 'Fri 17:00' };
+  assert.equal(dreamDue(s, new Date(2026, 9, 2, 17, 5).toISOString(), new Date(2026, 9, 2, 17, 30)), false);
+  assert.equal(dreamDue(s, new Date(2026, 8, 25, 17, 10).toISOString(), new Date(2026, 9, 2, 16, 59)), false); // Fri before slot
+  assert.equal(dreamDue(s, new Date(2026, 8, 25, 17, 10).toISOString(), new Date(2026, 8, 30, 10, 0)), false); // Wed
+});
+
+test('dream: off when the schedule is empty or unparseable', () => {
+  const friEve = new Date(2026, 9, 2, 17, 30);
+  assert.equal(dreamDue({ ...settings }, null, friEve), false); // default ''
+  assert.equal(schedule(settings, 0, friEve).dreamDue, false);
+  assert.equal(dreamDue({ ...settings, dreamSchedule: 'someday' }, null, friEve), false);
+  assert.equal(lastDreamSlot('', friEve), null);
+  assert.equal(lastDreamSlot('Mon,Thu 09:30', friEve).getDay(), 4);
+});
+
+test('dream: never due outside working hours', () => {
+  const s = { ...settings, dreamSchedule: 'Fri 17:00' };
+  assert.equal(dreamDue(s, null, new Date(2026, 9, 2, 19, 0)), false); // Fri after hours
+  assert.equal(dreamDue(s, null, new Date(2026, 9, 3, 11, 0)), false); // Sat
+  assert.equal(dreamDue({ ...s, dreamSchedule: 'Sat 10:00' }, null, new Date(2026, 9, 3, 11, 0)), false);
+});

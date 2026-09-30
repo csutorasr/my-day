@@ -139,3 +139,24 @@ test('subscriptions', () => {
   S.removeSubscription(db, 'https://p/1');
   assert.equal(S.listSubscriptions(db).length, 0);
 });
+
+import { DatabaseSync } from 'node:sqlite';
+
+test('meta migration upgrades an existing v1 database in place', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'myday-db-'));
+  const file = join(dir, 'state.db');
+  const old = new DatabaseSync(file);
+  old.exec(S.MIGRATIONS[0]);
+  old.exec('PRAGMA user_version = 1');
+  old.prepare("INSERT INTO items(id, type, ext_key, created_at, updated_at) VALUES ('bug-1', 'bug', 'jira:OLD-1', '2026-01-01', '2026-01-01')").run();
+  old.close();
+  const db = S.openDb(file);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, S.MIGRATIONS.length);
+  assert.equal(S.getItem(db, 'bug-1').ext_key, 'jira:OLD-1');
+  assert.equal(S.getMeta(db, 'lastDreamAt'), null);
+  S.setMeta(db, 'lastDreamAt', '2026-09-25T15:00:00.000Z');
+  S.setMeta(db, 'lastDreamAt', '2026-10-02T15:00:00.000Z');
+  assert.equal(S.getMeta(db, 'lastDreamAt'), '2026-10-02T15:00:00.000Z');
+  db.close();
+  assert.equal(S.getMeta(S.openDb(file), 'lastDreamAt'), '2026-10-02T15:00:00.000Z'); // reopen: no re-migration
+});

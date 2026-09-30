@@ -17,6 +17,9 @@ export const REQUIRED = [
   'POST-MR',
 ];
 
+// Optional files: read when present; the skill that uses them falls back to its template.
+export const OPTIONAL = ['DREAM'];
+
 export const DEFAULTS = {
   port: 4711,
   maxAgents: 3,
@@ -37,6 +40,7 @@ export const DEFAULTS = {
   targetBranch: 'main',
   reviewBatchNotify: 3, // more new review requests than this → one summary notification
   hideCoveredReviews: false, // hide review requests others already approved / requested changes on
+  dreamSchedule: '', // when my-day:dream is due, e.g. 'Fri 17:00'; empty = off
 };
 
 const read = (file) => (existsSync(file) ? readFileSync(file, 'utf8') : null);
@@ -71,7 +75,8 @@ export function parseFrontmatter(text) {
   for (const line of m[1].split(/\r?\n/)) {
     // A comment needs whitespace before '#', so quoted values like '#\d+' survive.
     const kv = /^([A-Za-z][\w-]*)\s*:\s*("[^"]*"|'[^']*'|.*?)(\s+#.*)?$/.exec(line);
-    if (kv && kv[2] !== '') out[kv[1]] = coerce(kv[2]);
+    // An empty value followed by a comment ("key:   # note") stays unset.
+    if (kv && kv[2] !== '' && !kv[2].startsWith('#')) out[kv[1]] = coerce(kv[2]);
   }
   return out;
 }

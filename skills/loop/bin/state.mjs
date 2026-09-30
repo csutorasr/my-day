@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import * as S from '../lib/db.mjs';
 import { resolveRange } from '../lib/range.mjs';
-import { REQUIRED, findMissing, readConfig, loopSettings } from '../lib/config.mjs';
+import { REQUIRED, OPTIONAL, findMissing, readConfig, loopSettings } from '../lib/config.mjs';
 import * as server from '../lib/serverctl.mjs';
 import { schedule } from '../lib/schedule.mjs';
 import { sync } from '../lib/sync.mjs';
@@ -33,6 +33,8 @@ Items      upsert --type bug|story|subtask|mr|review --ext <jira:KEY|gitlab:path
 Questions  ask <id|-> "text" | answer <q-n> "text" | decline <q-n> | questions [--status open]
 Events     event <id|-> <kind> "message" | events [range] [--item <id>] [--limit n]
 Summary    summary [--today|--yesterday|--since D|--from D --to D] | prune [--days n]
+Dream      dream-data [--since <D|iso>]  history bundle for my-day:dream (default: since lastDreamAt, else 7 days)
+           dream-done [--report <file>] "summary"   record lastDreamAt, log dream + notify events
 Reviews    review done|skip <id>
 Config     config missing | config show <NAME> | config all | config settings | config dir
 Server     server start | server stop | server status
@@ -50,7 +52,7 @@ const { values: opt, positionals: pos } = parseArgs({
     today: { type: 'boolean' }, yesterday: { type: 'boolean' },
     since: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' },
     json: { type: 'boolean' },
-    agent: { type: 'string' }, result: { type: 'string' }, 'new-session': { type: 'boolean' },
+    agent: { type: 'string' }, result: { type: 'string' }, report: { type: 'string' }, 'new-session': { type: 'boolean' },
   },
 });
 
@@ -126,6 +128,16 @@ function fmtSummary(sum) {
   const notable = sum.events.filter((e) => e.kind !== 'created');
   lines.push(`Events (${notable.length}):`);
   for (const e of notable) lines.push(`  ${localTime(e.ts)} ${e.kind}: ${e.message}`);
+  return lines.join('\n');
+}
+
+function fmtDream(d) {
+  const lines = [`Dream window ${localTime(d.window.from)} → ${localTime(d.window.until)} (last dream: ${d.window.lastDreamAt ? localTime(d.window.lastDreamAt) : 'never'})`];
+  lines.push('Events: ' + (Object.entries(d.counts).map(([k, v]) => `${k}=${v}`).join(', ') || 'none'));
+  lines.push(`Failed ${d.failed.length} · questions ${d.questions.length} · reconciles ${d.reconciles.length} · retried ${d.attempts.filter((a) => a.dispatches > 1).length} · merged ${d.cycleTimes.length} · reviews ${d.reviews.length} · config changes ${d.configChanges.length}`);
+  for (const f of d.failed) lines.push(`  ✖ ${f.id} ${f.title ?? ''} — ${f.fail_reason ?? ''}`);
+  for (const q of d.questions) lines.push(`  ${q.id} (${q.status}) ${q.text}${q.answer ? ` → ${q.answer}` : ''}`);
+  lines.push('Use --json for the full bundle.');
   return lines.join('\n');
 }
 
@@ -252,6 +264,20 @@ try {
       out(`pruned ${S.prune(db(), days)} events older than ${days} days`);
       break;
     }
+    case 'dream-data': {
+      const d = S.dreamData(db(), { since: opt.since ? resolveRange({ since: opt.since }).from : undefined });
+      opt.json ? out(d) : out(fmtDream(d));
+      break;
+    }
+    case 'dream-done': {
+      const at = new Date().toISOString();
+      const text = args.join(' ') || 'dream finished';
+      S.setMeta(db(), 'lastDreamAt', at);
+      S.addEvent(db(), { kind: 'dream', message: text, data: opt.report ? { report: opt.report } : undefined });
+      S.addEvent(db(), { kind: 'notify', message: `Dream: ${text}` });
+      out(opt.json ? { lastDreamAt: at } : `ok ${at}`);
+      break;
+    }
     case 'review': {
       const [action, ref] = args;
       if (!['done', 'skip'].includes(action)) die('review done|skip <id>');
@@ -276,7 +302,7 @@ try {
       break;
     }
     case 'schedule':
-      out(schedule(loopSettings(dir), S.listItems(db()).filter((i) => i.agent_id).length));
+      out(schedule(loopSettings(dir), S.listItems(db()).filter((i) => i.agent_id).length, new Date(), { lastDreamAt: S.getMeta(db(), 'lastDreamAt') }));
       break;
     case 'sync':
       out(sync(db(), loopSettings(dir)));
@@ -296,7 +322,7 @@ try {
         if (v !== 'wait') (byVerdict[v] ??= []).push(m.id);
       }
       out({
-        schedule: schedule(settings, items.filter((i) => i.agent_id).length),
+        schedule: schedule(settings, items.filter((i) => i.agent_id).length, new Date(), { lastDreamAt: S.getMeta(db(), 'lastDreamAt') }),
         sync: delta,
         act: byVerdict,
         tickets: actionable.filter((i) => ['bug', 'story', 'subtask'].includes(i.type) && !i.agent_id).map((i) => `${i.id}:${i.status}`),
@@ -325,7 +351,7 @@ try {
       const [sub, name] = args;
       if (sub === 'missing') out(findMissing(dir).join('\n'));
       else if (sub === 'show') out(readConfig(dir, name).text || die(`no ${name}.md in ${dir}`));
-      else if (sub === 'all') out(REQUIRED.map((n) => `# ===== ${n} =====\n${readConfig(dir, n).text}`).join('\n\n'));
+      else if (sub === 'all') out([...REQUIRED, ...OPTIONAL.filter((n) => readConfig(dir, n).text)].map((n) => `# ===== ${n} =====\n${readConfig(dir, n).text}`).join('\n\n'));
       else if (sub === 'settings') out(loopSettings(dir));
       else if (sub === 'dir') out(dir);
       else die('config missing|show <NAME>|all|settings|dir');

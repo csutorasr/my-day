@@ -65,3 +65,45 @@ test('delete removes items by id and --closed sweeps terminal ones', () => {
   assert.ok(run('delete', '--closed', '--type', 'bug').split(' ').includes(a));
   assert.ok(run('get', c).includes('jira:DEL-3'));
 });
+
+test('dream-data bundles the window and dream-done moves it forward', () => {
+  const d = mkdtempSync(join(tmpdir(), 'myday-dream-'));
+  const r = (...a) => execFileSync(process.execPath, [CLI, ...a], { env: { ...process.env, MY_DAY_DIR: d }, encoding: 'utf8' }).trim();
+  r('upsert', '--type', 'bug', '--ext', 'jira:DR-1', '--title', 'Flaky');
+  r('dispatch', 'bug-1', '--agent', 'w1');
+  r('reconcile', 'bug-1', '--result', '{"status":"failed","summary":"CI red, local green"}');
+  r('dispatch', 'bug-1', '--agent', 'w2');
+  r('fail', 'bug-1', '--reason', 'CI red, local green');
+  r('upsert', '--type', 'mr', '--ext', 'gitlab:g/a!7', '--title', 'Fix');
+  r('set', 'mr-1', 'status=merged');
+  r('upsert', '--type', 'review', '--ext', 'gitlab:g/b!3', '--title', 'Teammate MR');
+  const q = r('ask', 'bug-1', 'Skip', 'flaky', 'test?');
+  r('answer', q, 'yes, quarantine it');
+  r('event', '-', 'config-changed', 'DEVELOP: run the full CI suite locally');
+
+  const b = JSON.parse(r('dream-data', '--json'));
+  assert.deepEqual(Object.keys(b).sort(), ['attempts', 'configChanges', 'counts', 'cycleTimes', 'events', 'failed', 'questions', 'reconciles', 'reviews', 'window']);
+  assert.equal(b.window.lastDreamAt, null);
+  assert.ok(new Date(b.window.until) - new Date(b.window.from) >= 7 * 86400000 - 1000);
+  assert.ok(b.events.byKind.dispatched.every((e) => e.id && e.ts && e.item === 'bug-1'));
+  assert.equal(b.events.byItem['bug-1'].kinds.dispatched, 2);
+  assert.deepEqual(b.failed.map((f) => [f.id, f.fail_reason]), [['bug-1', 'CI red, local green']]);
+  assert.equal(b.failed[0].eventIds.length, 1);
+  assert.deepEqual(b.questions.map((x) => [x.status, x.answer]), [['answered', 'yes, quarantine it']]);
+  assert.deepEqual(b.reconciles.map((x) => [x.item, x.status]), [['bug-1', 'failed']]);
+  assert.deepEqual(b.attempts.map((a) => [a.id, a.dispatches, a.attempts]), [['bug-1', 2, 2]]);
+  assert.equal(b.cycleTimes[0].id, 'mr-1');
+  assert.equal(typeof b.cycleTimes[0].hours, 'number');
+  assert.deepEqual(b.reviews.map((x) => [x.id, x.status]), [['review-1', 'new']]);
+  assert.match(b.configChanges[0].message, /full CI suite/);
+  assert.match(r('dream-data'), /Failed 1 · questions 1/);
+
+  r('dream-done', '--report', '.my-day/dreams/2026-10-02.md', '3 findings, 1 config edit');
+  const after = JSON.parse(r('dream-data', '--json'));
+  assert.ok(after.window.lastDreamAt);
+  assert.equal(after.window.from, after.window.lastDreamAt);
+  assert.deepEqual(Object.keys(after.events.byKind).sort(), ['dream', 'notify']);
+  assert.equal(after.events.byKind.dream[0].message, '3 findings, 1 config edit');
+  // --since overrides lastDreamAt.
+  assert.ok(JSON.parse(r('dream-data', '--since', '2000-01-01', '--json')).events.byKind.dispatched);
+});
