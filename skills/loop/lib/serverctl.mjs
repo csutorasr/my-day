@@ -1,10 +1,10 @@
 // Start / stop / probe the dashboard server for a .my-day directory.
 import { spawn } from 'node:child_process';
 import { existsSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const SERVER = join(dirname(fileURLToPath(import.meta.url)), '..', 'server', 'server.mjs');
+const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'server', 'server.mjs');
 const pidFile = (dir) => join(dir, 'server.pid');
 
 function alive(pid) {
@@ -39,12 +39,18 @@ export async function status(dir) {
   if (!rec || !alive(rec.pid)) return { running: false, stale: !!rec };
   const h = await health(rec.port);
   if (!h || h.dir !== dir) return { running: false, stale: true };
-  return { running: true, pid: rec.pid, port: rec.port, url: `http://127.0.0.1:${rec.port}`, push: h.push };
+  const outdated = h.code !== SERVER; // started from another install, version or moved folder
+  return { running: true, outdated, pid: rec.pid, port: rec.port, url: `http://127.0.0.1:${rec.port}`, push: h.push };
 }
 
 export async function start(dir, { port }) {
-  const current = await status(dir);
-  if (current.running) return { ...current, started: false };
+  let current = await status(dir);
+  if (current.running && !current.outdated) return { ...current, started: false };
+  if (current.running) {
+    await stop(dir);
+    for (let i = 0; i < 30 && (await health(current.port)); i++) await new Promise((r) => setTimeout(r, 100));
+    current = { running: false, stale: false };
+  }
   if (current.stale) rmSync(pidFile(dir), { force: true });
   const log = openSync(join(dir, 'server.log'), 'a');
   const child = spawn(process.execPath, [SERVER, '--dir', dir, '--port', String(port)], {

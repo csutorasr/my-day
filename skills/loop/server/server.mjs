@@ -14,7 +14,9 @@ const dir = resolve(values.dir ?? join(process.cwd(), '.my-day'));
 const settings = loopSettings(dir);
 const db = S.openDb(join(dir, 'state.db'));
 const push = await createPush(dir, settings.pushSubject);
-const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), 'public');
+// SELF lets serverctl spot a server still running older / moved code and restart it.
+const SELF = fileURLToPath(import.meta.url);
+const PUBLIC = join(dirname(SELF), 'public');
 
 // Event kinds that are worth interrupting the user for.
 const NOTIFY = {
@@ -86,7 +88,7 @@ const server = createServer(async (req, res) => {
       }
       return send(res, 404, { error: 'not found' });
     }
-    if (url.pathname === '/health') return send(res, 200, { ok: true, dir, pid: process.pid, push: push.enabled });
+    if (url.pathname === '/health') return send(res, 200, { ok: true, dir, pid: process.pid, push: push.enabled, code: SELF });
     if (url.pathname === '/api/state') return send(res, 200, state());
     if (url.pathname === '/api/summary') {
       const q = Object.fromEntries(url.searchParams);

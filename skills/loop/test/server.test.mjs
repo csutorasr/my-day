@@ -2,7 +2,8 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:net';
 import * as S from '../lib/db.mjs';
 import * as ctl from '../lib/serverctl.mjs';
@@ -52,4 +53,19 @@ test('stale pid is replaced', async () => {
   writeFileSync(join(dir, 'server.pid'), JSON.stringify({ pid: 999999, port }));
   const s = await ctl.start(dir, { port });
   assert.equal(s.started, true);
+});
+
+test('a server running other code (older install / moved folder) is replaced', async () => {
+  const { cpSync } = await import('node:fs');
+  const here = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const copy = join(mkdtempSync(join(tmpdir(), 'myday-old-')), 'loop');
+  cpSync(here, copy, { recursive: true, filter: (p) => !p.includes('/test/') });
+  const oldCtl = await import(join(copy, 'lib', 'serverctl.mjs'));
+  await ctl.stop(dir);
+  await oldCtl.start(dir, { port });
+  const s = await ctl.start(dir, { port });
+  assert.equal(s.started, true);
+  const h = await (await fetch(`${base}/health`)).json();
+  assert.equal(h.code, join(here, 'server', 'server.mjs'));
+  assert.equal((await fetch(`${base}/`)).status, 200);
 });
