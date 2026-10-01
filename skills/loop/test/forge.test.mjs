@@ -163,3 +163,11 @@ test('ticket pattern is configurable', () => {
   const list = JSON.parse(execFileSync(process.execPath, [BIN, '--provider', 'gitlab', 'mine', '--group', 'grp/app/', '--ticket-pattern', 'fix/[A-Z]+'], { env: { ...process.env, GLAB_BIN: glab }, encoding: 'utf8' }));
   assert.deepEqual(list[0].ticketKeys, ['fix/ABC']);
 });
+
+test('isAiReviewer accepts a comma-separated list and falls back to the bot pattern', async () => {
+  const { isAiReviewer } = await import('../lib/forge/ai-reviewer.mjs');
+  assert.equal(isAiReviewer('GitLabDuo', 'ci_bot, GitLabDuo', /_bot_/), true);
+  assert.equal(isAiReviewer('ci_bot', 'ci_bot,GitLabDuo', /_bot_/), true);
+  assert.equal(isAiReviewer('alice', 'ci_bot,GitLabDuo', /_bot_/), false);
+  assert.equal(isAiReviewer('group_1_bot_x', '', /_bot_/), true);
+});

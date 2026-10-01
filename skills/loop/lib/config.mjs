@@ -36,7 +36,7 @@ export const DEFAULTS = {
   forge: 'gitlab', // gitlab | github
   group: '', // code-host group/org prefix whose MRs/PRs count
   ticketPattern: '[A-Z][A-Z0-9]+-\\d+',
-  aiReviewer: '', // bot account whose review comments count as AI review
+  aiReviewer: '', // bot account(s) whose review comments count as AI review (comma-separated)
   targetBranch: 'main',
   reviewBatchNotify: 3, // more new review requests than this → one summary notification
   hideCoveredReviews: false, // hide review requests others already approved / requested changes on

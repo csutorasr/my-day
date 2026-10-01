@@ -3,6 +3,7 @@
 // success | failed | running | pending | null, derived from check runs.
 import { execFileSync } from 'node:child_process';
 import { ticketKeys } from './gitlab.mjs';
+import { isAiReviewer } from './ai-reviewer.mjs';
 
 const gh = (args) =>
   JSON.parse(execFileSync(process.env.GH_BIN ?? 'gh', ['api', ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
@@ -94,7 +95,7 @@ export function mr(project, number, { aiReviewer }) {
         discussionId: t.id,
         noteId: c?.databaseId ?? null,
         author,
-        fromAi: aiReviewer ? author === aiReviewer : /\[bot\]$/.test(author),
+        fromAi: isAiReviewer(author, aiReviewer, /\[bot\]$/),
         path: t.path,
         line: t.line,
         body: c?.body ?? '',

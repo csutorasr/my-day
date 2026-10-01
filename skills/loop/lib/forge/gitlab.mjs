@@ -1,5 +1,6 @@
 // GitLab provider (via `glab api`). Output shape shared with github.mjs.
 import { execFileSync } from 'node:child_process';
+import { isAiReviewer } from './ai-reviewer.mjs';
 
 const api = (endpoint) =>
   JSON.parse(execFileSync(process.env.GLAB_BIN ?? 'glab', ['api', endpoint], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
@@ -53,7 +54,7 @@ export function mr(project, iid, { aiReviewer }) {
         discussionId: d.id,
         noteId: n.id,
         author: n.author.username,
-        fromAi: aiReviewer ? n.author.username === aiReviewer : /_bot_/.test(n.author.username),
+        fromAi: isAiReviewer(n.author.username, aiReviewer, /_bot_/),
         path: n.position?.new_path ?? null,
         line: n.position?.new_line ?? null,
         body: n.body,

@@ -15,7 +15,7 @@ tracker: <TRACKER>        # jira | github | gitlab | linear | azure | other | no
 forge: <FORGE>            # gitlab | github
 group: <GROUP>/
 ticketPattern: '<TICKET_REGEX>'
-aiReviewer: <AI_REVIEWER_BOT>   # bot account of the AI review job, if any
+aiReviewer: <AI_REVIEWER_BOT>   # bot account(s) of AI reviewers, comma-separated, if any
 targetBranch: main
 reviewBatchNotify: 3
 hideCoveredReviews: false  # true = hide reviews others already handled, until re-requested with an approval still needed
