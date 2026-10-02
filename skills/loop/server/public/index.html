@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>my-day</title>
+<meta name="description" content="my-day: what the development loop is doing and what needs you.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%230f766e%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%276%27 fill=%27none%27 stroke=%27white%27 stroke-width=%273%27/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -14,6 +16,9 @@
     --bad: #b42318; --bad-soft: #fdecea; --ok: #15803d; --ok-ink: #166534; --ok-soft: #e7f5ec;
     --chip: #eef0f3; --chip-ink: #4b5160; --grey: #9aa0ab;
     --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --r-panel: 14px; --r-card: 10px; --r-ctl: 8px; --r-tag: 4px;
+    --ease: cubic-bezier(.2, .7, .2, 1); --fast: 160ms;
+    --lift: 0 1px 2px rgba(21, 40, 60, .06), 0 2px 8px rgba(21, 40, 60, .05);
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -23,17 +28,34 @@
       --warn: #e39b58; --warn-ink: #f0b97f; --warn-soft: #34261a;
       --bad: #f08a80; --bad-soft: #3a1f1d; --ok: #6cc59a; --ok-ink: #8fd6b2; --ok-soft: #17301f;
       --chip: #262a30; --chip-ink: #b6bcc6; --grey: #6f7682;
+      --lift: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 2px 8px rgba(0, 0, 0, .25);
       color-scheme: dark;
     }
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { transition: none !important; animation: none !important; } }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, sans-serif; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  button { font: inherit; color: inherit; cursor: pointer; }
+  button { font: inherit; color: inherit; cursor: pointer; transition: background-color var(--fast) var(--ease), border-color var(--fast) var(--ease), color var(--fast) var(--ease), transform var(--fast) var(--ease); }
+  button:active:not(:disabled) { transform: scale(.98); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-tag); }
+  .num, .tile .v, .count, .time, .n, .mono { font-variant-numeric: tabular-nums; }
+  h2, .ask .text, .card .t { text-wrap: pretty; }
+  .skip { position: absolute; left: 16px; top: -48px; z-index: 10; padding: 8px 12px; border-radius: var(--r-ctl); background: var(--accent); color: #fff; }
+  .skip:focus { top: 12px; text-decoration: none; }
   .mono { font-family: var(--mono); }
   .muted { color: var(--muted); }
   [hidden] { display: none !important; }
+  .small { font-size: 12px; } .tiny { font-size: 11px; } .body-sm { font-size: 13px; } .wrap { overflow-wrap: anywhere; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .t-warn { color: var(--warn); } .t-accent { color: var(--accent); }
+  .section { display: flex; flex-direction: column; gap: 12px; }
+  .section-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .closed { padding: 0 18px 12px; } .closed summary { cursor: pointer; }
+  .flush { gap: 0 !important; }
 
   header { position: sticky; top: 0; z-index: 3; background: var(--panel); border-bottom: 1px solid var(--line); }
   .bar { max-width: 1320px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -42,12 +64,13 @@
   .live { width: 10px; height: 10px; border-radius: 50%; background: var(--grey); }
   .live.on { background: var(--ok); box-shadow: 0 0 0 4px var(--ok-soft); }
   .chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .chip { font-size: 12px; padding: 3px 10px; border-radius: 99px; background: var(--chip); color: var(--chip-ink); white-space: nowrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: var(--r-ctl); background: var(--chip); color: var(--chip-ink); white-space: nowrap; }
   .chip.accent { background: var(--accent-soft); color: var(--accent-ink); font-weight: 500; }
   .chip.warn { background: var(--warn-soft); color: var(--warn-ink); font-weight: 500; }
   .grow { flex: 1; }
-  .btn { min-height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--btn-line); background: var(--panel); }
-  .btn:hover { border-color: var(--accent); }
+  .btn { min-height: 36px; padding: 0 14px; border-radius: var(--r-ctl); border: 1px solid var(--btn-line); background: var(--panel); }
+  .btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .btn.primary:hover { background: var(--accent-ink); border-color: var(--accent-ink); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
   .btn.small { min-height: 30px; padding: 0 10px; font-size: 12px; border-radius: 6px; }
   .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
@@ -55,19 +78,19 @@
 
   main { max-width: 1320px; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; gap: 24px; }
   .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
-  .tile { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: var(--ink); }
-  .tile:hover { text-decoration: none; border-color: var(--accent); }
-  .tile .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
-  .tile .v { font-size: 30px; font-weight: 600; line-height: 1.1; }
+  .tile { display: flex; flex-direction: column; gap: 2px; padding: 16px 18px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); color: var(--ink); transition: border-color var(--fast) var(--ease), transform var(--fast) var(--ease); }
+  .tile:hover { text-decoration: none; border-color: var(--accent); transform: translateY(-1px); }
+  .tile .k { font-size: 13px; font-weight: 500; color: var(--muted); }
+  .tile .v { font-size: 32px; font-weight: 600; line-height: 1.1; letter-spacing: -.02em; }
   .tile .s { font-size: 12px; color: var(--muted); }
   .cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; align-items: start; }
   .stack { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); overflow: hidden; }
   .panel > .head { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .panel > .body { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
   h2 { margin: 0; font-size: 15px; font-weight: 600; }
-  .count { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 99px; background: var(--chip); color: var(--chip-ink); }
+  .count { font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: var(--r-tag); background: var(--chip); color: var(--chip-ink); }
   .count:empty { display: none; }
   .count.warn { background: var(--warn-soft); color: var(--warn-ink); }
   .count.accent { background: var(--accent-soft); color: var(--accent-ink); }
@@ -87,25 +110,25 @@
   .ask:first-child { border-top: 0; }
   .ask .main { display: flex; flex-direction: column; gap: 6px; flex: 1 1 360px; min-width: 0; }
   .ask .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .kind { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent-ink); }
+  .kind { font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: var(--r-tag); background: var(--accent-soft); color: var(--accent-ink); }
   .kind.approval { background: var(--warn-soft); color: var(--warn-ink); }
   .ask .text { overflow-wrap: anywhere; }
   .ask form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex: 1 1 320px; justify-content: flex-end; }
-  .ask input[type=text] { font: inherit; min-height: 40px; min-width: 160px; flex: 1; padding: 0 10px; border-radius: 8px; border: 1px solid var(--btn-line); background: var(--bg); color: var(--ink); }
+  .ask input[type=text] { font: inherit; min-height: 40px; min-width: 160px; flex: 1; padding: 0 10px; border-radius: var(--r-ctl); border: 1px solid var(--btn-line); background: var(--bg); color: var(--ink); }
   .ask .btn { min-height: 40px; }
 
   .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; align-items: start; }
-  .lane { display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--lane); border-radius: 12px; min-width: 0; }
+  .lane { display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--lane); border-radius: var(--r-panel); min-width: 0; }
   .lane .title { display: flex; align-items: center; gap: 8px; padding: 2px 4px; font-size: 13px; font-weight: 600; }
   .lane .title .n { font-weight: 400; color: var(--muted); font-size: 12px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--grey); }
   .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); } .dot.ok { background: var(--ok); } .dot.accent { background: var(--accent); }
-  .lane .none { padding: 14px 10px; font-size: 12px; color: var(--muted); text-align: center; border: 1px dashed var(--btn-line); border-radius: 10px; }
-  .card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+  .lane .none { padding: 14px 10px; font-size: 12px; color: var(--muted); text-align: center; border: 1px dashed var(--btn-line); border-radius: var(--r-card); }
+  .card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; background: var(--panel); border-radius: var(--r-card); box-shadow: var(--lift); min-width: 0; }
   .card .top { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
   .card .t { font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
   .gates { display: flex; gap: 4px; flex-wrap: wrap; }
-  .g { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--chip); color: var(--chip-ink); }
+  .g { font-size: 11px; padding: 1px 6px; border-radius: var(--r-tag); background: var(--chip); color: var(--chip-ink); }
   .g.ok { background: var(--ok-soft); color: var(--ok-ink); } .g.bad { background: var(--bad-soft); color: var(--bad); } .g.wait { background: var(--warn-soft); color: var(--warn-ink); }
   .card .next { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line-soft); padding-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: space-between; }
   .card .next.warn { color: var(--warn-ink); }
@@ -117,7 +140,7 @@
   .rows .btns { display: flex; gap: 4px; flex-shrink: 0; }
   .rows .main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 200px; }
   .rows .t { font-size: 13px; overflow-wrap: anywhere; }
-  .status { font-size: 11px; padding: 1px 8px; border-radius: 99px; background: var(--chip); color: var(--chip-ink); white-space: nowrap; }
+  .status { font-size: 11px; padding: 1px 7px; border-radius: var(--r-tag); background: var(--chip); color: var(--chip-ink); white-space: nowrap; }
   .reason { color: var(--bad); font-size: 12px; }
 
   .slots { display: grid; gap: 6px; }
@@ -125,10 +148,10 @@
   .slot.on { background: var(--accent); }
   .agent { display: flex; gap: 10px; align-items: baseline; }
   .agent .main { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
-  .sec { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .sec { font-size: 13px; font-weight: 500; color: var(--muted); }
 
   .ranges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .pill { min-height: 30px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--btn-line); background: var(--panel); font-size: 12px; color: var(--chip-ink); }
+  .pill { min-height: 30px; padding: 0 10px; border-radius: var(--r-ctl); border: 1px solid var(--btn-line); background: var(--panel); font-size: 12px; color: var(--chip-ink); }
   .pill[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
   .ranges input { font: inherit; font-size: 12px; min-height: 30px; background: var(--bg); color: var(--ink); border: 1px solid var(--btn-line); border-radius: 6px; padding: 0 6px; }
   .ev { display: grid; grid-template-columns: 44px 10px minmax(0, 1fr); gap: 10px; padding: 6px 0; }
@@ -137,7 +160,10 @@
   .ev .main { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
   .ev .msg { font-size: 13px; overflow-wrap: anywhere; }
 
-  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 5; }
+  .skel { display: block; height: 14px; border-radius: var(--r-tag); background: linear-gradient(90deg, var(--line-soft), var(--line), var(--line-soft)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+  .skel.card-skel { height: 96px; border-radius: var(--r-card); }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: var(--r-ctl); font-size: 13px; z-index: 5; box-shadow: var(--lift); }
 
   @media (max-width: 1000px) {
     .cols { grid-template-columns: minmax(0, 1fr); }
@@ -155,12 +181,13 @@
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <header>
   <div class="bar">
     <div class="brand">
       <span class="live" id="live" title="Live connection to the loop"></span>
       <b>my-day</b>
-      <span class="mono muted" id="dir" style="font-size:12px"></span>
+      <span class="mono muted small" id="dir"></span>
     </div>
     <div class="chips">
       <span class="chip accent" id="mode">Live</span>
@@ -173,19 +200,19 @@
     <button class="btn" id="notify" type="button">Enable notifications</button>
   </div>
 </header>
-<main>
+<main id="main">
   <nav class="tiles" aria-label="Overview">
-    <a class="tile" href="#needs"><span class="k">Needs you</span><span class="v" id="t-needs" style="color:var(--warn)">–</span><span class="s" id="t-needs-s"></span></a>
-    <a class="tile" href="#mrs"><span class="k">My merge requests</span><span class="v" id="t-mrs">–</span><span class="s" id="t-mrs-s"></span></a>
-    <a class="tile" href="#reviews"><span class="k">Reviews for you</span><span class="v" id="t-reviews" style="color:var(--accent)">–</span><span class="s" id="t-reviews-s"></span></a>
-    <a class="tile" href="#agents"><span class="k">Agents</span><span class="v" id="t-agents">–</span><span class="s" id="t-agents-s"></span></a>
+    <a class="tile" href="#needs"><span class="k">Needs you</span><span class="v t-warn" id="t-needs"><span class="skel" style="width:2ch;height:30px"></span></span><span class="s" id="t-needs-s"></span></a>
+    <a class="tile" href="#mrs"><span class="k">My merge requests</span><span class="v" id="t-mrs"><span class="skel" style="width:2ch;height:30px"></span></span><span class="s" id="t-mrs-s"></span></a>
+    <a class="tile" href="#reviews"><span class="k">Reviews for you</span><span class="v t-accent" id="t-reviews"><span class="skel" style="width:2ch;height:30px"></span></span><span class="s" id="t-reviews-s"></span></a>
+    <a class="tile" href="#agents"><span class="k">Agents</span><span class="v" id="t-agents"><span class="skel" style="width:3ch;height:30px"></span></span><span class="s" id="t-agents-s"></span></a>
   </nav>
 
   <div class="cols">
     <div class="stack">
       <section class="panel" id="needs" aria-labelledby="h-needs">
-        <div class="head"><h2 id="h-needs">Needs you</h2><span class="count warn" id="c-needs"></span><span class="muted" style="font-size:12px">Answer here or in the session — the loop picks it up on its next tick.</span></div>
-        <div id="asks"></div>
+        <div class="head"><h2 id="h-needs">Needs you</h2><span class="count warn" id="c-needs"></span><span class="muted small">Answer here or in the session — the loop picks it up within seconds.</span></div>
+        <div id="asks"><div class="ask"><div class="main"><span class="skel" style="width:40%"></span><span class="skel" style="width:80%"></span></div></div></div>
       </section>
 
       <section class="panel" id="failures" aria-labelledby="h-failed" hidden>
@@ -193,15 +220,15 @@
         <ul class="rows" id="failed"></ul>
       </section>
 
-      <section id="mrs" aria-labelledby="h-mrs" style="display:flex;flex-direction:column;gap:12px">
-        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><h2 id="h-mrs">My merge requests</h2><span class="muted" id="mrs-sub" style="font-size:12px"></span></div>
-        <div class="board" id="board"></div>
+      <section class="section" id="mrs" aria-labelledby="h-mrs">
+        <div class="section-head"><h2 id="h-mrs">My merge requests</h2><span class="muted small" id="mrs-sub"></span></div>
+        <div class="board" id="board"><div class="lane"><span class="skel card-skel"></span></div><div class="lane"><span class="skel card-skel"></span></div></div>
       </section>
 
       <section class="panel" aria-labelledby="h-tickets">
         <div class="head"><h2 id="h-tickets">Tickets</h2><span class="count" id="c-tickets"></span></div>
         <ul class="rows" id="tickets"></ul>
-        <details id="closed-wrap" hidden style="padding:0 18px 12px"><summary class="muted" style="cursor:pointer">Closed</summary><ul class="rows" id="closed"></ul></details>
+        <details class="closed" id="closed-wrap" hidden><summary class="muted">Closed</summary><ul class="rows" id="closed"></ul></details>
       </section>
     </div>
 
@@ -212,12 +239,12 @@
       </section>
 
       <section class="panel" id="agents" aria-labelledby="h-agents">
-        <div class="head"><h2 id="h-agents">Agents</h2><span class="muted" id="slots-txt" style="font-size:12px"></span></div>
+        <div class="head"><h2 id="h-agents">Agents</h2><span class="muted small" id="slots-txt"></span></div>
         <div class="body">
           <div class="slots" id="slots"></div>
-          <div id="running" style="display:flex;flex-direction:column;gap:8px"></div>
+          <div class="list" id="running"></div>
           <div class="sec">Finished today</div>
-          <div id="finished" style="display:flex;flex-direction:column;gap:8px"></div>
+          <div class="list" id="finished"></div>
         </div>
       </section>
 
@@ -227,12 +254,12 @@
           <div class="ranges">
             <button class="pill" type="button" data-range="today" aria-pressed="true">Today</button>
             <button class="pill" type="button" data-range="yesterday" aria-pressed="false">Yesterday</button>
-            <label class="muted" style="font-size:12px">from <input type="date" id="from"></label>
-            <label class="muted" style="font-size:12px">to <input type="date" id="to"></label>
+            <label class="muted small">from <input type="date" id="from"></label>
+            <label class="muted small">to <input type="date" id="to"></label>
             <button class="pill" type="button" id="apply" aria-pressed="false">Apply</button>
           </div>
         </div>
-        <div class="body" id="events" style="gap:0"></div>
+        <div class="body flush" id="events"></div>
       </section>
     </div>
   </div>
