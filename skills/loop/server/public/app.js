@@ -269,9 +269,19 @@ document.addEventListener('submit', async (e) => {
   catch (err) { toast(err.message); }
 });
 
+// Theme: system (default) / light / dark, remembered per browser. The <head> script applies it before paint.
+function setTheme(choice, save = true) {
+  if (choice === 'light' || choice === 'dark') document.documentElement.dataset.theme = choice;
+  else delete document.documentElement.dataset.theme;
+  document.querySelectorAll('[data-theme-choice]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.themeChoice === choice)));
+  if (save) { try { choice === 'system' ? localStorage.removeItem('my-day-theme') : localStorage.setItem('my-day-theme', choice); } catch {} }
+}
+setTheme(document.documentElement.dataset.theme ?? 'system', false);
+
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('button');
   if (!b) return;
+  if (b.dataset.themeChoice) { setTheme(b.dataset.themeChoice); return; }
   try {
     if (b.dataset.copy) {
       await navigator.clipboard.writeText(b.dataset.copy);
