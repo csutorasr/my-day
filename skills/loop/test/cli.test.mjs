@@ -107,3 +107,29 @@ test('dream-data bundles the window and dream-done moves it forward', () => {
   // --since overrides lastDreamAt.
   assert.ok(JSON.parse(r('dream-data', '--since', '2000-01-01', '--json')).events.byKind.dispatched);
 });
+
+test('tick reports dashboard answers and requests once, records the next tick and honours pause', async () => {
+  const tick = () => JSON.parse(execFileSync(process.execPath, [CLI, 'tick'], { env: { ...process.env, MY_DAY_DIR: dir, GLAB_BIN: '/usr/bin/false' }, encoding: 'utf8' }));
+  tick();
+  run('event', 'bug-1', 'dashboard-request', 'bug-1: retry requested on dashboard');
+  run('pause');
+  const t = tick();
+  assert.deepEqual(t.fromDashboard.map((d) => d.kind), ['dashboard-request']);
+  assert.equal(t.schedule.paused, true);
+  assert.equal(t.schedule.freeSlots, 0);
+  assert.equal(tick().fromDashboard.length, 0);
+  run('resume');
+  assert.equal(tick().schedule.paused, false);
+  const S = await import('../lib/db.mjs');
+  const db = S.openDb(join(dir, 'state.db'));
+  assert.ok(Date.parse(S.getMeta(db, 'nextTickAt')) > Date.parse(S.getMeta(db, 'lastTickAt')));
+  db.close();
+});
+
+test('watch-dashboard streams only dashboard events after the tick cursor', () => {
+  run('event', 'bug-1', 'note', 'not a dashboard event');
+  run('event', 'bug-1', 'dashboard-request', 'bug-1: elaborate requested on dashboard');
+  const lines = run('watch-dashboard', '--once').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.deepEqual(lines.map((l) => l.kind), ['dashboard-request']);
+  assert.equal(lines[0].item, 'bug-1');
+});

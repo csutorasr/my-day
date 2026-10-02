@@ -33,8 +33,16 @@ const broadcast = (type, data) => {
   for (const res of clients) res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
 };
 
+// Quick actions a dashboard viewer may ask the loop for. The loop picks them up on its next tick
+// (`state.mjs tick` → fromDashboard); the server itself never touches the code host or tracker.
+const REQUESTS = ['rebase', 'fix-pipeline', 'fix-review', 'merge', 'retry', 'elaborate'];
+
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
+
 function state() {
   const items = S.listItems(db).map((i) => ({ ...i, links: S.linksOf(db, i.id) }));
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const ref = (i) => (i ? { id: i.id, type: i.type, title: i.title, url: i.url, project: i.data?.project ?? null, iid: i.data?.iid ?? null } : null);
   const withHint = (i) => ({ ...i, hint: i.links.length || i.url ? null : `No resources yet — ask in the session: \`elaborate ${i.id}\`.` });
   return {
     dir,
@@ -44,10 +52,25 @@ function state() {
     items,
     reviews: items.filter((i) => i.type === 'review' && !['done', 'skipped', 'covered'].includes(i.status)),
     failed: items.filter((i) => i.failed).map(withHint),
-    questions: S.listQuestions(db, { status: 'open' }),
+    questions: S.listQuestions(db, { status: 'open' }).map((q) => ({ ...q, item: ref(byId.get(q.item_id)) })),
+    finishedToday: S.listEvents(db, { from: startOfToday() })
+      .filter((e) => e.kind === 'worker')
+      .map((e) => ({ id: e.id, ts: e.ts, message: e.message, status: e.data?.status ?? null, commits: e.data?.commits ?? [], item: ref(byId.get(e.item_id)) })),
+    loop: {
+      paused: S.getMeta(db, 'paused') === 'true',
+      lastTickAt: S.getMeta(db, 'lastTickAt'),
+      nextTickAt: S.getMeta(db, 'nextTickAt'),
+      workingHours: settings.workingHours,
+      workingDays: settings.workingDays,
+      maxAgents: settings.maxAgents,
+      targetBranch: settings.targetBranch,
+    },
+    requests: REQUESTS,
     recent: S.listEvents(db, { limit: 50 }),
   };
 }
+
+const openQuestion = (qid) => S.listQuestions(db, { status: 'open' }).find((q) => q.id === qid) ?? null;
 
 const send = (res, code, body, type = 'application/json') => {
   res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' });
@@ -78,6 +101,34 @@ const server = createServer(async (req, res) => {
         if (!item || item.type !== 'review') return send(res, 404, { error: `no review ${m[1]}` });
         S.setFields(db, item.id, { status: m[2] === 'done' ? 'done' : 'skipped' });
         S.addEvent(db, { itemId: item.id, kind: `review-${m[2]}`, message: `${item.id} marked ${m[2]} on dashboard` });
+        broadcast('change', {});
+        return send(res, 200, { ok: true });
+      }
+      const qa = /^\/api\/questions\/(q-\d+)\/(answer|decline)$/.exec(url.pathname);
+      if (qa) {
+        const q = openQuestion(qa[1]);
+        if (!q) return send(res, 404, { error: `no open question ${qa[1]}` });
+        const text = qa[2] === 'answer' ? String((await body(req)).text ?? '').trim().slice(0, 2000) : '';
+        if (qa[2] === 'answer' && !text) return send(res, 400, { error: 'answer text required' });
+        if (qa[2] === 'answer') S.answer(db, q.id, text); else S.decline(db, q.id);
+        S.addEvent(db, { itemId: q.item_id, kind: 'dashboard-answer', message: `${q.id} ${qa[2] === 'answer' ? `answered on dashboard: ${text}` : 'declined on dashboard'}`, data: { questionId: q.id, status: qa[2] === 'answer' ? 'answered' : 'declined', text } });
+        broadcast('change', {});
+        return send(res, 200, { ok: true });
+      }
+      const rq = /^\/api\/items\/([\w-]+)\/request$/.exec(url.pathname);
+      if (rq) {
+        const item = S.getItem(db, rq[1]);
+        if (!item) return send(res, 404, { error: `no item ${rq[1]}` });
+        const { action } = await body(req);
+        if (!REQUESTS.includes(action)) return send(res, 400, { error: `unknown action ${action}` });
+        S.addEvent(db, { itemId: item.id, kind: 'dashboard-request', message: `${item.id}: ${action} requested on dashboard`, data: { action } });
+        broadcast('change', {});
+        return send(res, 200, { ok: true });
+      }
+      const pz = /^\/api\/loop\/(pause|resume)$/.exec(url.pathname);
+      if (pz) {
+        S.setMeta(db, 'paused', pz[1] === 'pause' ? 'true' : 'false');
+        S.addEvent(db, { kind: 'dashboard-pause', message: `loop ${pz[1] === 'pause' ? 'paused' : 'resumed'} on dashboard`, data: { paused: pz[1] === 'pause' } });
         broadcast('change', {});
         return send(res, 200, { ok: true });
       }

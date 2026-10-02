@@ -19,12 +19,18 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
 
 ## Tick
 1. `$SM tick` → `schedule` (incl. `dreamDue`), `sync` (code-host delta), `act` (MR ids by verdict), `tickets`,
-   `running`, `reviewsPending`, `openQuestions`, `failed`. Code host and reviews are done
+   `running`, `reviewsPending`, `openQuestions`, `failed`, `fromDashboard`. Code host and reviews are done
    (`covered` reviews, see QUERY-MY-REVIEWS.md, are not pending).
+   `fromDashboard` = what the user did on the dashboard since the last tick: `dashboard-answer`
+   (a question answered/declined there — act on it exactly as on an answer in the session),
+   `dashboard-request` (`action`: rebase | fix-pipeline | fix-review | merge | retry | elaborate on `item` —
+   the user's explicit go for that one action; do it this tick, `elaborate` → reply in the session via
+   `my-day:summary`), `dashboard-pause` (just acknowledge it in the session).
 2. Tracker: run the ticket queries in QUERY-MY-TASKS.md → `$SM upsert-many`; items gone
    from scope → `status=closed` + event. `awaiting-answers` tickets → look for replies.
    QUERY-INBOX.md only when step 4 finds nothing actionable.
-3. `schedule.inHours` false → skip to step 6 (read-only outside hours).
+3. `schedule.inHours` false → skip to step 6 (read-only outside hours). `schedule.paused` true → no
+   dispatches or outward actions either; still handle `fromDashboard` answers and requests.
 4. Act in this order; workers only within `schedule.freeSlots`:
    - `act.merge` → extra gates in MERGE-GATES.md (dependencies, trains) → merge; event `merged`.
    - `act.rebase` → per MERGE-GATES.md (server-side first, `rebase` worker on failure).
@@ -41,6 +47,11 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
 5. `$SM prune` once a day.
 6. `ScheduleWakeup`: prompt `/loop /my-day:loop`, `delaySeconds` = `schedule.delaySeconds`,
    `noop` = nothing changed.
+7. Dashboard watch: unless one is already running (TaskList), arm a `Monitor` with
+   `node $SM watch-dashboard` (from the workspace root), `timeout_ms` 1800000, description
+   "my-day dashboard clicks". Each event is a click on the dashboard → run a tick right away (from
+   step 1; its `fromDashboard` holds the click) instead of waiting for the wakeup. Re-arm it when it
+   expires. Outside working hours the watch keeps running: answers are recorded, actions wait for hours.
 
 ## Workers
 Agent tool, `general-purpose`, no `isolation` (workers make their own sub-repo worktree):
@@ -56,10 +67,10 @@ Then `$SM dispatch <id> --agent <name> --status <new status>`. On completion:
 
 ## User
 - All communication in this session (the user follows it via Remote Control); the dashboard
-  mirrors it. Ask with `$SM ask <id> "<q>"` and in chat as "q-4 · bug-2 (ABC-812 …): …";
+  mirrors it and can answer questions, pause, and send per-item quick actions (see `fromDashboard`). Ask with `$SM ask <id> "<q>"` and in chat as "q-4 · bug-2 (ABC-812 …): …";
   record with `$SM answer` / `$SM decline`; never re-ask; keep working meanwhile.
 - An answer or instruction that sets a standing rule → `my-day:config`.
-- `elaborate <id>` / `summary …` → `my-day:summary`. `dream` → `my-day:dream`. `pause` (no dispatch), `resume`,
+- `elaborate <id>` / `summary …` → `my-day:summary`. `dream` → `my-day:dream`. `pause` (`$SM pause`, no dispatch), `resume` (`$SM resume`),
   `stop` (`ScheduleWakeup stop`; server stays), `retry <id>` (`$SM unfail <id>`,
   `$SM set <id> attempts=0`).
 
@@ -70,7 +81,8 @@ becomes `$SM event <id> dry-run "would: …"`. Brainstorms stop before their tra
 and show it instead.
 
 ## Rules
-- Only this session writes task state (the dashboard only marks reviews done/skip).
+- Only this session writes task state. The dashboard only marks reviews done/skip, answers questions,
+  sets pause and logs quick-action requests; it never touches the code host or tracker.
 - Follow the workspace's CLAUDE.md / AGENTS.md. Force-push only as MERGE-GATES.md allows.
 - zsh: never name variables `path`, `status` or `argv`; no shell state survives between
   calls; request only the fields you need from tracker APIs.
