@@ -43,7 +43,7 @@ function state() {
   const items = S.listItems(db).map((i) => ({ ...i, links: S.linksOf(db, i.id) }));
   const byId = new Map(items.map((i) => [i.id, i]));
   const ref = (i) => (i ? { id: i.id, type: i.type, title: i.title, url: i.url, project: i.data?.project ?? null, iid: i.data?.iid ?? null } : null);
-  const withHint = (i) => ({ ...i, hint: i.links.length || i.url ? null : `No resources yet — ask in the session: \`elaborate ${i.id}\`.` });
+  const withHint = (i) => ({ ...i, hint: i.links.length || i.url ? null : `No resources yet. Ask in the session: \`elaborate ${i.id}\`.` });
   return {
     dir,
     dryRun: settings.dryRun,

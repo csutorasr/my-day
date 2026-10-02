@@ -132,7 +132,7 @@ function render(s) {
         </div>`;
       }).join('')
     : `<div class="calm"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17 19 7"></path></svg></span>
-        <div><b>Nothing needs you right now.</b><span class="muted small">${s.loop.paused ? 'The loop is paused — resume it from the header.' : nxt ? `${esc(nxt)} — new questions show up here.` : 'New questions show up here.'}</span></div></div>`;
+        <div><b>Nothing needs you right now.</b><span class="muted small">${s.loop.paused ? 'The loop is paused. Resume it from the header.' : nxt ? `${esc(nxt)}. New questions show up here.` : 'New questions show up here.'}</span></div></div>`;
 
   // Failures (items the loop gave up on)
   $('#failures').hidden = !s.failed.length;
@@ -265,7 +265,7 @@ document.addEventListener('submit', async (e) => {
   const typed = f.elements.text.value.trim();
   const text = typed || (f.dataset.approval === 'true' ? 'yes' : '');
   if (!text) { f.elements.text.focus(); return; }
-  try { await post(`/api/questions/${f.dataset.question}/answer`, { text }); toast(`${f.dataset.question} answered — the loop acts on its next tick`); load(); }
+  try { await post(`/api/questions/${f.dataset.question}/answer`, { text }); toast(`${f.dataset.question} answered. The loop acts on it shortly.`); load(); }
   catch (err) { toast(err.message); }
 });
 
@@ -288,7 +288,7 @@ document.addEventListener('click', async (e) => {
       toast('Link copied');
     } else if (b.dataset.request) {
       await post(`/api/items/${b.dataset.item}/request`, { action: b.dataset.request });
-      toast(`${ACTION_LABEL[b.dataset.request]} requested for ${b.dataset.item} — picked up on the next tick`);
+      toast(`${ACTION_LABEL[b.dataset.request]} requested for ${b.dataset.item}. The loop picks it up shortly.`);
       load();
     } else if (b.dataset.decline) {
       await post(`/api/questions/${b.dataset.decline}/decline`);
