@@ -7,7 +7,7 @@
 <meta name="description" content="my-day: what the development loop is doing and what needs you.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%230f766e%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%276%27 fill=%27none%27 stroke=%27white%27 stroke-width=%273%27/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #f3f4f6; --panel: #ffffff; --lane: #e9ebef; --ink: #15171c; --muted: #5b616e; --line: #e2e4e9; --line-soft: #eef0f3;
@@ -15,7 +15,8 @@
     --warn: #b45309; --warn-ink: #92400e; --warn-soft: #fef3e2;
     --bad: #b42318; --bad-soft: #fdecea; --ok: #15803d; --ok-ink: #166534; --ok-soft: #e7f5ec;
     --chip: #eef0f3; --chip-ink: #4b5160; --grey: #9aa0ab;
-    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --z-header: 10; --z-toast: 20; --z-skip: 30;
     --r-panel: 14px; --r-card: 10px; --r-ctl: 8px; --r-tag: 4px;
     --ease: cubic-bezier(.2, .7, .2, 1); --fast: 160ms;
     --lift: 0 1px 2px rgba(21, 40, 60, .06), 0 2px 8px rgba(21, 40, 60, .05);
@@ -35,7 +36,7 @@
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; scroll-padding-top: 72px; }
   @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { transition: none !important; animation: none !important; } }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
   button { font: inherit; color: inherit; cursor: pointer; transition: background-color var(--fast) var(--ease), border-color var(--fast) var(--ease), color var(--fast) var(--ease), transform var(--fast) var(--ease); }
@@ -43,7 +44,7 @@
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-tag); }
   .num, .tile .v, .count, .time, .n, .mono { font-variant-numeric: tabular-nums; }
   h2, .ask .text, .card .t { text-wrap: pretty; }
-  .skip { position: absolute; left: 16px; top: -48px; z-index: 10; padding: 8px 12px; border-radius: var(--r-ctl); background: var(--accent); color: #fff; }
+  .skip { position: absolute; left: 16px; top: -48px; z-index: var(--z-skip); padding: 8px 12px; border-radius: var(--r-ctl); background: var(--accent); color: #fff; }
   .skip:focus { top: 12px; text-decoration: none; }
   .mono { font-family: var(--mono); }
   .muted { color: var(--muted); }
@@ -57,12 +58,13 @@
   .closed { padding: 0 18px 12px; } .closed summary { cursor: pointer; }
   .flush { gap: 0 !important; }
 
-  header { position: sticky; top: 0; z-index: 3; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header { position: sticky; top: 0; z-index: var(--z-header); background: var(--panel); border-bottom: 1px solid var(--line); }
   .bar { max-width: 1320px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   .brand { display: flex; align-items: center; gap: 10px; }
   .brand b { font-weight: 600; font-size: 17px; letter-spacing: .2px; }
   .live { width: 10px; height: 10px; border-radius: 50%; background: var(--grey); }
-  .live.on { background: var(--ok); box-shadow: 0 0 0 4px var(--ok-soft); }
+  .live.on { background: var(--ok); box-shadow: 0 0 0 4px var(--ok-soft); animation: pulse 2.4s var(--ease) infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 7px transparent; } }
   .chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .chip { font-size: 12px; padding: 3px 9px; border-radius: var(--r-ctl); background: var(--chip); color: var(--chip-ink); white-space: nowrap; }
   .chip.accent { background: var(--accent-soft); color: var(--accent-ink); font-weight: 500; }
@@ -75,6 +77,8 @@
   .btn.small { min-height: 30px; padding: 0 10px; font-size: 12px; border-radius: 6px; }
   .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
   .btn.ghost:hover { color: var(--ink); border-color: var(--btn-line); }
+  .btn.link { border-color: transparent; background: transparent; color: var(--muted); padding: 0 6px; }
+  .btn.link:hover { color: var(--accent-ink); background: transparent; border-color: transparent; text-decoration: underline; }
 
   main { max-width: 1320px; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; gap: 24px; }
   .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
@@ -163,7 +167,14 @@
   .skel { display: block; height: 14px; border-radius: var(--r-tag); background: linear-gradient(90deg, var(--line-soft), var(--line), var(--line-soft)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
   .skel.card-skel { height: 96px; border-radius: var(--r-card); }
   @keyframes shimmer { to { background-position: -200% 0; } }
-  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: var(--r-ctl); font-size: 13px; z-index: 5; box-shadow: var(--lift); }
+  .offline { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: var(--r-card); background: var(--bad-soft); color: var(--bad); font-size: 13px; }
+  .calm { display: flex; gap: 14px; align-items: center; padding: 18px; }
+  .calm .mark { width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--r-ctl); background: var(--ok-soft); color: var(--ok); display: grid; place-items: center; }
+  .calm .mark svg { width: 18px; height: 18px; }
+  .calm b { font-weight: 500; display: block; }
+  .enter { animation: rise .32s var(--ease) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: var(--r-ctl); font-size: 13px; z-index: var(--z-toast); box-shadow: var(--lift); }
 
   @media (max-width: 1000px) {
     .cols { grid-template-columns: minmax(0, 1fr); }
@@ -197,10 +208,11 @@
     </div>
     <span class="grow"></span>
     <button class="btn" id="pause" type="button">Pause loop</button>
-    <button class="btn" id="notify" type="button">Enable notifications</button>
+    <button class="btn link" id="notify" type="button">Enable notifications</button>
   </div>
 </header>
 <main id="main">
+  <div class="offline" id="offline" role="alert" hidden>Can’t reach the my-day server at this address. Retrying every few seconds — start it with <span class="mono">state.mjs bootstrap</span> if it stopped.</div>
   <nav class="tiles" aria-label="Overview">
     <a class="tile" href="#needs"><span class="k">Needs you</span><span class="v t-warn" id="t-needs"><span class="skel" style="width:2ch;height:30px"></span></span><span class="s" id="t-needs-s"></span></a>
     <a class="tile" href="#mrs"><span class="k">My merge requests</span><span class="v" id="t-mrs"><span class="skel" style="width:2ch;height:30px"></span></span><span class="s" id="t-mrs-s"></span></a>
@@ -232,7 +244,7 @@
       </section>
     </div>
 
-    <div class="stack">
+    <aside class="stack" aria-label="Reviews, agents and activity">
       <section class="panel" id="reviews" aria-labelledby="h-reviews">
         <div class="head"><h2 id="h-reviews">Reviews for you</h2><span class="count accent" id="c-reviews"></span></div>
         <ul class="rows" id="review-list"></ul>
@@ -261,7 +273,7 @@
         </div>
         <div class="body flush" id="events"></div>
       </section>
-    </div>
+    </aside>
   </div>
 </main>
 <div class="toast" id="toast" role="status" hidden></div>

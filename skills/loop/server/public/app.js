@@ -131,7 +131,8 @@ function render(s) {
           </form>
         </div>`;
       }).join('')
-    : '<div class="empty">Nothing needs you right now.</div>';
+    : `<div class="calm"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17 19 7"></path></svg></span>
+        <div><b>Nothing needs you right now.</b><span class="muted small">${s.loop.paused ? 'The loop is paused — resume it from the header.' : nxt ? `${esc(nxt)} — new questions show up here.` : 'New questions show up here.'}</span></div></div>`;
 
   // Failures (items the loop gave up on)
   $('#failures').hidden = !s.failed.length;
@@ -211,8 +212,26 @@ const GOOD = new Set(['merged', 'rebased', 'pipeline-green', 'review-done', 'que
 const ATTN = new Set(['question', 'review-requested', 'dashboard-request', 'dashboard-answer']);
 const dotFor = (k) => (BAD.has(k) ? 'bad' : GOOD.has(k) ? 'ok' : ATTN.has(k) ? 'warn' : 'accent');
 
+let firstLoad = true;
 async function load() {
-  render(await (await fetch('/api/state')).json());
+  let st;
+  try {
+    const r = await fetch('/api/state');
+    if (!r.ok) throw new Error(r.statusText);
+    st = await r.json();
+  } catch {
+    $('#offline').hidden = false;
+    $('#live').classList.remove('on');
+    setTimeout(load, 5000);
+    return;
+  }
+  $('#offline').hidden = true;
+  render(st);
+  // Stagger the first paint; later updates (SSE) re-render in place without motion.
+  if (firstLoad) {
+    firstLoad = false;
+    document.querySelectorAll('.tile, .panel, .lane').forEach((el, k) => { el.classList.add('enter'); el.style.animationDelay = `${Math.min(k, 10) * 30}ms`; });
+  }
   const sum = await (await fetch('/api/summary?' + new URLSearchParams(range))).json();
   const evs = sum.events.filter((e) => e.kind !== 'created').reverse();
   const byId = new Map(last.items.map((i) => [i.id, i]));
