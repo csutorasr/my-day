@@ -1,6 +1,8 @@
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const hhmm = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+// Time, prefixed with the day when it is not today ("Oct 1, 18:14").
+const when = (ts) => (new Date(ts).toDateString() === new Date().toDateString() ? hhmm(ts) : `${new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${hhmm(ts)}`);
 let range = { today: '1' };
 let last = null;
 
@@ -56,7 +58,7 @@ function ref(i, { text, url, actions } = {}) {
     ? `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(name)}</a>
        <button type="button" class="qa" data-copy="${esc(href)}" aria-label="Copy link to ${esc(name)}" title="Copy link">${ICON.copy}</button>
        <a class="qa" href="${esc(href)}" target="_blank" rel="noopener" aria-label="Open ${esc(name)} in a new tab" title="Open">${ICON.open}</a>`
-    : `<span class="mono" style="font-size:12px">${esc(name)}</span>`;
+    : `<span class="mono small">${esc(name)}</span>`;
   return `<span class="ref">${link}${acts}</span>`;
 }
 
@@ -103,7 +105,7 @@ function render(s) {
   $('#paused').hidden = !s.loop.paused;
   $('#pause').textContent = s.loop.paused ? 'Resume loop' : 'Pause loop';
   $('#hours').textContent = `Working hours ${s.loop.workingHours}`;
-  const nxt = s.loop.nextTickAt && new Date(s.loop.nextTickAt) > new Date() ? `Next check ${hhmm(s.loop.nextTickAt)}` : s.loop.lastTickAt ? `Last check ${hhmm(s.loop.lastTickAt)}` : '';
+  const nxt = s.loop.nextTickAt && new Date(s.loop.nextTickAt) > new Date() ? `Next check ${when(s.loop.nextTickAt)}` : s.loop.lastTickAt ? `Last check ${when(s.loop.lastTickAt)}` : '';
   $('#next').hidden = !nxt;
   $('#next').textContent = nxt;
 
@@ -118,11 +120,11 @@ function render(s) {
         const item = q.item ? s.items.find((i) => i.id === q.item.id) : null;
         return `<div class="ask">
           <div class="main">
-            <div class="meta"><span class="mono muted" style="font-size:12px">${esc(q.id)}</span><span class="kind${approval ? ' approval' : ''}">${approval ? 'Approval' : 'Question'}</span>${item ? ref(item, { actions: [] }) : ''}</div>
+            <div class="meta"><span class="mono muted small">${esc(q.id)}</span><span class="kind${approval ? ' approval' : ''}">${approval ? 'Approval' : 'Question'}</span>${item ? ref(item, { actions: [] }) : ''}</div>
             <div class="text">${esc(sentence(q.text.replace(/^approve:\s*/i, '')))}</div>
           </div>
           <form data-question="${esc(q.id)}" data-approval="${approval}">
-            <label class="muted" style="font-size:12px;position:absolute;left:-9999px" for="a-${esc(q.id)}">Answer ${esc(q.id)}</label>
+            <label class="sr-only" for="a-${esc(q.id)}">Answer ${esc(q.id)}</label>
             <input type="text" id="a-${esc(q.id)}" name="text" placeholder="${approval ? 'Optional note' : 'Your answer'}" autocomplete="off">
             <button class="btn primary" type="submit">${approval ? 'Approve' : 'Send'}</button>
             <button class="btn" type="button" data-decline="${esc(q.id)}">Decline</button>
@@ -134,7 +136,7 @@ function render(s) {
   // Failures (items the loop gave up on)
   $('#failures').hidden = !s.failed.length;
   $('#c-failed').textContent = s.failed.length || '';
-  $('#failed').innerHTML = s.failed.map((f) => `<li><div class="main">${ref(f)}<span class="t">${esc(f.title)}</span><span class="reason">${esc(f.fail_reason)}</span>${f.hint ? `<span class="muted" style="font-size:12px">${esc(f.hint)}</span>` : ''}</div></li>`).join('');
+  $('#failed').innerHTML = s.failed.map((f) => `<li><div class="main">${ref(f)}<span class="t">${esc(f.title)}</span><span class="reason">${esc(f.fail_reason)}</span>${f.hint ? `<span class="muted small">${esc(f.hint)}</span>` : ''}</div></li>`).join('');
 
   // MR board
   const lanes = [
@@ -160,7 +162,7 @@ function render(s) {
         const ticket = m.data?.ticketKeys?.[0];
         const nextText = q ? `Waiting for you · ${q.id}` : m.agent_id ? `Agent ${m.agent_id} working` : NEXT[m.data?.verdict] ?? (humanFailing(m.data?.failing ?? []) || 'Waiting');
         return `<div class="card">
-          <div class="top">${ref(m)}${ticket ? `<span class="mono muted" style="font-size:11px">${esc(ticket)}</span>` : ''}</div>
+          <div class="top">${ref(m)}${ticket ? `<span class="mono muted tiny">${esc(ticket)}</span>` : ''}</div>
           <div class="t">${esc(m.title)}</div>
           ${gates(m, s.loop.targetBranch)}
           ${linkRefs(m) ? `<div class="links">${linkRefs(m)}</div>` : ''}
@@ -174,7 +176,7 @@ function render(s) {
   const closedTickets = s.items.filter((i) => CLOSED.has(i.status) && !['mr', 'review'].includes(i.type));
   $('#c-tickets').textContent = tickets.length || '';
   $('#tickets').innerHTML = tickets.length
-    ? tickets.map((i) => `<li><div class="main">${ref(i)}<span class="t">${esc(i.title)}</span>${[i.branch, i.repos?.join(', '), i.attempts ? `attempts ${i.attempts}` : ''].filter(Boolean).length ? `<span class="muted" style="font-size:12px">${esc([i.branch, i.repos?.join(', '), i.attempts ? `attempts ${i.attempts}` : ''].filter(Boolean).join(' · '))}</span>` : ''}</div><span class="status">${esc(i.status)}</span></li>`).join('')
+    ? tickets.map((i) => `<li><div class="main">${ref(i)}<span class="t">${esc(i.title)}</span>${[i.branch, i.repos?.join(', '), i.attempts ? `attempts ${i.attempts}` : ''].filter(Boolean).length ? `<span class="muted small">${esc([i.branch, i.repos?.join(', '), i.attempts ? `attempts ${i.attempts}` : ''].filter(Boolean).join(' · '))}</span>` : ''}</div><span class="status">${esc(i.status)}</span></li>`).join('')
     : '<li class="empty">No open tickets in scope.</li>';
   $('#closed-wrap').hidden = !closedTickets.length;
   $('#closed-wrap summary').textContent = `Closed (${closedTickets.length})`;
@@ -198,10 +200,10 @@ function render(s) {
   $('#slots-txt').textContent = `${running.length} of ${max} slots busy`;
   $('#slots').style.gridTemplateColumns = `repeat(${max}, minmax(0, 1fr))`;
   $('#slots').innerHTML = Array.from({ length: max }, (_, k) => `<span class="slot${k < running.length ? ' on' : ''}"></span>`).join('');
-  $('#running').innerHTML = running.map((i) => `<div class="agent"><span class="g wait">running</span><div class="main"><span style="font-size:13px">${esc(i.agent_id)}</span>${ref(i, { actions: [] })}</div></div>`).join('');
+  $('#running').innerHTML = running.map((i) => `<div class="agent"><span class="g wait">running</span><div class="main"><span class="body-sm">${esc(i.agent_id)}</span>${ref(i, { actions: [] })}</div></div>`).join('');
   $('#finished').innerHTML = s.finishedToday.length
-    ? s.finishedToday.slice().reverse().map((f) => `<div class="agent"><span class="g ${f.status === 'done' ? 'ok' : 'bad'}">${esc(f.status ?? 'done')}</span><div class="main"><span style="font-size:13px;overflow-wrap:anywhere">${esc(f.message.replace(/^\S+ \w+: /, ''))}</span>${f.item ? ref(s.items.find((i) => i.id === f.item.id) ?? f.item, { actions: [] }) : ''}${f.commits?.length ? `<span class="mono muted" style="font-size:11px">${esc(f.commits.map((c) => String(c).slice(0, 8)).join(' · '))}</span>` : ''}</div></div>`).join('')
-    : '<div class="muted" style="font-size:13px">Nothing yet.</div>';
+    ? s.finishedToday.slice().reverse().map((f) => `<div class="agent"><span class="g ${f.status === 'done' ? 'ok' : 'bad'}">${esc(f.status ?? 'done')}</span><div class="main"><span class="body-sm wrap">${esc(f.message.replace(/^\S+ \w+: /, ''))}</span>${f.item ? ref(s.items.find((i) => i.id === f.item.id) ?? f.item, { actions: [] }) : ''}${f.commits?.length ? `<span class="mono muted tiny">${esc(f.commits.map((c) => String(c).slice(0, 8)).join(' · '))}</span>` : ''}</div></div>`).join('')
+    : '<div class="muted body-sm">Nothing yet.</div>';
 }
 
 const BAD = new Set(['failed', 'escalated', 'orphaned', 'pipeline-failed', 'conflicts']);
@@ -219,7 +221,7 @@ async function load() {
         const item = e.item_id ? byId.get(e.item_id) : null;
         return `<div class="ev"><span class="time">${esc(hhmm(e.ts))}</span><span class="dot ${dotFor(e.kind)}"></span>
           <div class="main"><span class="msg">${esc(e.message)}</span>
-          <span class="muted" style="font-size:11px">${esc(e.kind)}${item ? ' · ' : ''}${item ? ref(item, { actions: [] }) : e.item_id ? esc(e.item_id) : ''}</span></div></div>`;
+          <span class="muted tiny">${esc(e.kind)}${item ? ' · ' : ''}${item ? ref(item, { actions: [] }) : e.item_id ? esc(e.item_id) : ''}</span></div></div>`;
       }).join('')
     : '<div class="muted">No activity in this range.</div>';
 }
