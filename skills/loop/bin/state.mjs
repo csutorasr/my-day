@@ -16,6 +16,8 @@ const HELP = `my-day state CLI   (state dir: $MY_DAY_DIR or ./.my-day)
 Loop       bootstrap [--new-session]  config check, DB, dashboard, orphaned agents → JSON
            tick                       code-host sync + schedule + what to act on → JSON
            sync | schedule            the two halves of tick
+           pause | resume             stop / restart dispatching (the dashboard has the same button)
+           watch-dashboard [--interval ms]   stream dashboard clicks as JSON lines (run as a monitor)
            dispatch <id> --agent <name> [--status s]   record a started worker (attempts++)
            reconcile <id> [--result '<json|message>'] (or stdin)   apply a worker's report
 
@@ -51,7 +53,7 @@ const { values: opt, positionals: pos } = parseArgs({
     item: { type: 'string' }, limit: { type: 'string' }, days: { type: 'string' },
     today: { type: 'boolean' }, yesterday: { type: 'boolean' },
     since: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' },
-    json: { type: 'boolean' },
+    json: { type: 'boolean' }, interval: { type: 'string' }, once: { type: 'boolean' },
     agent: { type: 'string' }, result: { type: 'string' }, report: { type: 'string' }, 'new-session': { type: 'boolean' },
   },
 });
@@ -321,9 +323,22 @@ try {
         const v = m.data.verdict ?? 'unchecked';
         if (v !== 'wait') (byVerdict[v] ??= []).push(m.id);
       }
+      const now = new Date();
+      const sched = schedule(settings, items.filter((i) => i.agent_id).length, now, { lastDreamAt: S.getMeta(db(), 'lastDreamAt') });
+      // Pause (dashboard button or `state.mjs pause`): refresh continues, nothing is dispatched.
+      sched.paused = S.getMeta(db(), 'paused') === 'true';
+      if (sched.paused) sched.freeSlots = 0;
+      // What the user did on the dashboard since the previous tick: answers, quick-action requests, pause.
+      const seen = Number(S.getMeta(db(), 'lastDashboardEventId') ?? 0);
+      const dash = S.listEvents(db(), { afterId: seen }).filter((e) => ['dashboard-answer', 'dashboard-request', 'dashboard-pause'].includes(e.kind));
+      const lastEventId = S.listEvents(db(), { limit: 1 })[0]?.id ?? seen;
+      S.setMeta(db(), 'lastDashboardEventId', String(lastEventId));
+      S.setMeta(db(), 'lastTickAt', now.toISOString());
+      S.setMeta(db(), 'nextTickAt', new Date(now.getTime() + sched.delaySeconds * 1000).toISOString());
       out({
-        schedule: schedule(settings, items.filter((i) => i.agent_id).length, new Date(), { lastDreamAt: S.getMeta(db(), 'lastDreamAt') }),
+        schedule: sched,
         sync: delta,
+        fromDashboard: dash.map((e) => ({ kind: e.kind, item: e.item_id, ...(e.data ?? {}) })),
         act: byVerdict,
         tickets: actionable.filter((i) => ['bug', 'story', 'subtask'].includes(i.type) && !i.agent_id).map((i) => `${i.id}:${i.status}`),
         waitingOnUser: [...waiting].filter(Boolean),
@@ -334,6 +349,29 @@ try {
       });
       break;
     }
+    case 'watch-dashboard': {
+      // One JSON line per new dashboard answer / request / pause; runs until killed. The session arms it
+      // as a background monitor so a click wakes the loop instead of waiting for the next wakeup.
+      // Read-only: the cursor is local; `tick` still consumes the events (lastDashboardEventId).
+      const KINDS = ['dashboard-answer', 'dashboard-request', 'dashboard-pause'];
+      const every = Number(opt.interval ?? 1000);
+      let cursor = Number(S.getMeta(db(), 'lastDashboardEventId') ?? 0);
+      for (;;) {
+        for (const e of S.listEvents(db(), { afterId: cursor })) {
+          cursor = e.id;
+          if (KINDS.includes(e.kind)) process.stdout.write(JSON.stringify({ kind: e.kind, item: e.item_id, message: e.message, ...(e.data ?? {}) }) + '\n');
+        }
+        if (opt.once) break;
+        await new Promise((ok) => setTimeout(ok, every));
+      }
+      break;
+    }
+    case 'pause':
+    case 'resume':
+      S.setMeta(db(), 'paused', verb === 'pause' ? 'true' : 'false');
+      S.addEvent(db(), { kind: verb === 'pause' ? 'paused' : 'resumed', message: `loop ${verb}d` });
+      out({ paused: verb === 'pause' });
+      break;
     case 'dispatch':
       if (!opt.agent) die('dispatch needs --agent');
       out(dispatch(db(), resolveId(args[0]), { agent: opt.agent, status: opt.status }));

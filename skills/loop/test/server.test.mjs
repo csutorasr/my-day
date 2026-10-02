@@ -55,6 +55,40 @@ test('review done from dashboard updates the DB', async () => {
   assert.equal(S.getItem(db, reviewId).status, 'done');
 });
 
+test('answering a question from the dashboard closes it and logs a dashboard event', async () => {
+  const qid = S.ask(db, reviewId, 'Approve: rebase?');
+  const st = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(st.questions.find((q) => q.id === qid).item.id, reviewId);
+  const empty = await fetch(`${base}/api/questions/${qid}/answer`, { method: 'POST', headers: { origin: base }, body: '{}' });
+  assert.equal(empty.status, 400);
+  const r = await fetch(`${base}/api/questions/${qid}/answer`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ text: 'yes' }) });
+  assert.equal(r.status, 200);
+  assert.equal(S.listQuestions(db, { status: 'answered' }).find((q) => q.id === qid).answer, 'yes');
+  const ev = S.listEvents(db, { limit: 5 }).find((e) => e.kind === 'dashboard-answer');
+  assert.equal(ev.data.questionId, qid);
+  const again = await fetch(`${base}/api/questions/${qid}/decline`, { method: 'POST', headers: { origin: base } });
+  assert.equal(again.status, 404);
+});
+
+test('quick-action requests are validated and logged, never executed', async () => {
+  const bad = await fetch(`${base}/api/items/${reviewId}/request`, { method: 'POST', headers: { origin: base }, body: JSON.stringify({ action: 'rm -rf' }) });
+  assert.equal(bad.status, 400);
+  const missing = await fetch(`${base}/api/items/mr-404/request`, { method: 'POST', headers: { origin: base }, body: JSON.stringify({ action: 'rebase' }) });
+  assert.equal(missing.status, 404);
+  const ok = await fetch(`${base}/api/items/${reviewId}/request`, { method: 'POST', headers: { origin: base }, body: JSON.stringify({ action: 'elaborate' }) });
+  assert.equal(ok.status, 200);
+  assert.equal(S.listEvents(db, { limit: 1 })[0].data.action, 'elaborate');
+  const cross = await fetch(`${base}/api/items/${reviewId}/request`, { method: 'POST', headers: { origin: 'https://evil.example' }, body: JSON.stringify({ action: 'rebase' }) });
+  assert.equal(cross.status, 403);
+});
+
+test('pause and resume from the dashboard set the paused flag', async () => {
+  await fetch(`${base}/api/loop/pause`, { method: 'POST', headers: { origin: base } });
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).loop.paused, true);
+  await fetch(`${base}/api/loop/resume`, { method: 'POST', headers: { origin: base } });
+  assert.equal(S.getMeta(db, 'paused'), 'false');
+});
+
 test('stale pid is replaced', async () => {
   await ctl.stop(dir);
   writeFileSync(join(dir, 'server.pid'), JSON.stringify({ pid: 999999, port }));

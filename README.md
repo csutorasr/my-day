@@ -136,8 +136,13 @@ Add to `.gitignore`:
 - Items have short IDs: `bug-1`, `story-2`, `mr-4`, `review-5`.
 - `summary`, `summary since Monday`, `elaborate bug-1`, `retry bug-1`, `pause`, `resume`,
   `stop`.
-- The dashboard lists reviews waiting for you (with Done / Skip), open questions, failures
-  with links, all tasks and the activity log, and sends web push notifications.
+- The dashboard shows what needs you (answer or decline questions right there), your MRs
+  grouped by what they wait for, reviews (Done / Skip), agents, tickets and the activity log, and
+  sends web push notifications. Every MR / ticket / link has quick actions: copy, open, and a loop
+  action (rebase, fix pipeline, fix review, merge step, retry, ask why). Pause / resume the loop
+  from the header.
+- Dashboard clicks reach the loop on its next `tick` (`fromDashboard`); the loop also runs
+  `state.mjs watch-dashboard` as a monitor, so a click wakes it within seconds.
 
 ## How it works
 
@@ -150,6 +155,7 @@ CLI, `skills/loop/bin/state.mjs`, backed by SQLite in `.my-day/state.db`:
 | `tick` | Code-host sync (MRs + review requests), merge-gate verdicts, schedule, compact to-do JSON |
 | `dispatch` / `reconcile` | Worker bookkeeping: attempts, links, new MRs, retry limit → escalation |
 | `dream-data` / `dream-done` | History bundle for a dream; record `lastDreamAt` |
+| `pause` / `resume`, `watch-dashboard` | Stop dispatching; stream dashboard clicks to the session |
 | `summary`, `show`, `list`, `ask`, `answer`, … | State queries and updates (`state.mjs help`) |
 
 `bin/forge.mjs` reads GitLab (`glab`) and GitHub (`gh`) with one output shape. The
