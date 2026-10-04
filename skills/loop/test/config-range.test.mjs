@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveRange } from '../lib/range.mjs';
-import { REQUIRED, DEFAULTS, findMissing, readConfig, loopSettings } from '../lib/config.mjs';
+import { REQUIRED, LEGACY_REQUIRED, DEFAULTS, findMissing, requiredFiles, readConfig, loopSettings } from '../lib/config.mjs';
 
 test('range to is inclusive of the whole local day', () => {
   const r = resolveRange({ from: '2026-09-28', to: '2026-09-28' });
@@ -72,4 +72,29 @@ test('dreamSchedule defaults to off and reads from LOOP.local.md; DREAM is optio
   writeFileSync(join(dir, 'LOOP.local.md'), '---\ndreamSchedule: Fri 17:00   # weekly\n---\n');
   assert.equal(loopSettings(dir).dreamSchedule, 'Fri 17:00');
   assert.ok(!REQUIRED.includes('DREAM'));
+});
+
+test('requiredFiles: LOOP.md ## Files is the manifest', () => {
+  const d = mkdtempSync(join(tmpdir(), 'myday-man-'));
+  writeFileSync(join(d, 'LOOP.md'), '---\nmaxAgents: 2\n---\n# Loop\n## Files\nSOURCES.md, RITUALS.md\nLOOP.local.md is personal\n\n## Tick priority\n1. MERGE-GATES.md\n');
+  assert.deepEqual(requiredFiles(d), ['LOOP', 'SOURCES', 'RITUALS']);
+  assert.deepEqual(findMissing(d), ['SOURCES', 'RITUALS']);
+});
+
+test('requiredFiles: a LOOP.md without ## Files falls back to the legacy dev list', () => {
+  const d = mkdtempSync(join(tmpdir(), 'myday-man-'));
+  writeFileSync(join(d, 'LOOP.md'), '---\n---\n# Loop\n');
+  assert.deepEqual(requiredFiles(d), LEGACY_REQUIRED);
+  assert.deepEqual(REQUIRED, LEGACY_REQUIRED);
+});
+
+test('findMissing: no LOOP.md → the legacy list, LOOP first', () => {
+  const d = mkdtempSync(join(tmpdir(), 'myday-man-'));
+  assert.deepEqual(findMissing(d), LEGACY_REQUIRED);
+});
+
+test('the dev template LOOP.md lists every legacy file', () => {
+  const d = mkdtempSync(join(tmpdir(), 'myday-man-'));
+  writeFileSync(join(d, 'LOOP.md'), readFileSync(new URL('../templates/dev/LOOP.md', import.meta.url), 'utf8'));
+  assert.deepEqual(new Set(requiredFiles(d)), new Set(LEGACY_REQUIRED));
 });

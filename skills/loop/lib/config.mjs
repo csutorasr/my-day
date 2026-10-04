@@ -2,7 +2,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-export const REQUIRED = [
+// The dev profile's files: required when LOOP.md has no `## Files` manifest (set up before profiles).
+export const LEGACY_REQUIRED = [
   'LOOP',
   'QUERY-MY-TASKS',
   'QUERY-MY-REVIEWS',
@@ -16,6 +17,7 @@ export const REQUIRED = [
   'MERGE-GATES',
   'POST-MR',
 ];
+export const REQUIRED = LEGACY_REQUIRED;
 
 // Optional files: read when present; the skill that uses them falls back to its template.
 export const OPTIONAL = ['DREAM'];
@@ -45,7 +47,16 @@ export const DEFAULTS = {
 
 const read = (file) => (existsSync(file) ? readFileSync(file, 'utf8') : null);
 
-export const findMissing = (dir) => REQUIRED.filter((name) => !existsSync(join(dir, `${name}.md`)));
+// LOOP.md's `## Files` section names the files this workspace's loop needs, whatever the profile.
+export function requiredFiles(dir) {
+  const loop = read(join(dir, 'LOOP.md'));
+  const section = loop && /^## Files[ \t]*\r?\n([\s\S]*?)(?=^#{1,2} |(?![\s\S]))/m.exec(loop);
+  if (!section) return LEGACY_REQUIRED;
+  const names = [...section[1].matchAll(/\b([A-Z][A-Z0-9-]*)\.md\b/g)].map((m) => m[1]);
+  return ['LOOP', ...new Set(names.filter((n) => n !== 'LOOP'))];
+}
+
+export const findMissing = (dir) => requiredFiles(dir).filter((name) => !existsSync(join(dir, `${name}.md`)));
 
 export function readConfig(dir, name) {
   const shared = read(join(dir, `${name}.md`));

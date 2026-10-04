@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import * as S from '../lib/db.mjs';
 import { resolveRange } from '../lib/range.mjs';
-import { REQUIRED, OPTIONAL, findMissing, readConfig, loopSettings } from '../lib/config.mjs';
+import { OPTIONAL, findMissing, requiredFiles, readConfig, loopSettings } from '../lib/config.mjs';
 import * as server from '../lib/serverctl.mjs';
 import { schedule } from '../lib/schedule.mjs';
 import { sync } from '../lib/sync.mjs';
@@ -389,7 +389,7 @@ try {
       const [sub, name] = args;
       if (sub === 'missing') out(findMissing(dir).join('\n'));
       else if (sub === 'show') out(readConfig(dir, name).text || die(`no ${name}.md in ${dir}`));
-      else if (sub === 'all') out([...REQUIRED, ...OPTIONAL.filter((n) => readConfig(dir, n).text)].map((n) => `# ===== ${n} =====\n${readConfig(dir, n).text}`).join('\n\n'));
+      else if (sub === 'all') out([...requiredFiles(dir), ...OPTIONAL.filter((n) => readConfig(dir, n).text)].map((n) => `# ===== ${n} =====\n${readConfig(dir, n).text}`).join('\n\n'));
       else if (sub === 'settings') out(loopSettings(dir));
       else if (sub === 'dir') out(dir);
       else die('config missing|show <NAME>|all|settings|dir');

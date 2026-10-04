@@ -1,6 +1,6 @@
 ---
 name: loop
-description: Use when the user says "my day", "start my day", "/my-day:loop", or wants the run-forever development loop that merges ready MRs/PRs, fixes review comments, develops assigned tickets on worktrees, triages unassigned work and keeps a dashboard. Also the entry point on every loop wakeup.
+description: Use when the user says "my day", "start my day", "/my-day:loop", or wants the run-forever loop that resolves the workspace's tasks as its .my-day config says (dev profile - merges ready MRs/PRs, fixes review comments, develops assigned tickets on worktrees, triages unassigned work) and keeps a dashboard. Also the entry point on every loop wakeup.
 ---
 
 # my-day loop (orchestrator)
@@ -27,24 +27,17 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
    `dashboard-request` (`action`: rebase | fix-pipeline | fix-review | merge | retry | elaborate on `item` —
    the user's explicit go for that one action; do it this tick, `elaborate` → reply in the session via
    `my-day:summary`), `dashboard-pause` (just acknowledge it in the session).
-2. Tracker: run the ticket queries in QUERY-MY-TASKS.md → `$SM upsert-many`; items gone
-   from scope → `status=closed` + event. `awaiting-answers` tickets → look for replies.
-   QUERY-INBOX.md only when step 4 finds nothing actionable.
+2. Read `LOOP.md`'s *Tick priority*: it names, per step, the rules file to follow (the workspace's
+   profile decides what is there — e.g. tracker queries, merges, workflows). Run its read-only
+   refresh (the syncs listed before the numbered steps) on every tick. A `LOOP.md` without a
+   `## Files` section was set up before profiles: use the *Tick priority* of
+   `${CLAUDE_PLUGIN_ROOT}/skills/loop/templates/dev/LOOP.md` instead.
 3. `schedule.inHours` false → skip to step 6 (read-only outside hours). `schedule.paused` true → no
    dispatches or outward actions either; still handle `fromDashboard` answers and requests.
-4. Act in this order; workers only within `schedule.freeSlots`:
-   - `act.merge` → extra gates in MERGE-GATES.md (dependencies, trains) → merge; event `merged`.
-   - `act.rebase` → per MERGE-GATES.md (server-side first, `rebase` worker on failure).
-   - `act.fix-review` / `act.fix-pipeline` → `review-fix` / `pipeline-fix` worker.
-   - MRs in `mr-open` / `post-mr` → next unfinished POST-MR.md step; progress in
-     `data.postMr`; never block on a pipeline.
-   - `tickets` → next transition of WORKFLOW-BUG / -STORY / -SUBTASK.md. Brainstorm, spec
-     and planning steps run here, one brainstorm at a time (queue others as
-     `brainstorm-queued`); code steps → `develop` / `bug` worker.
-   - Nothing actionable → TRIAGE.md for inbox items.
-   - Last: `schedule.dreamDue` and no brainstorm running → run `my-day:dream` here in the
-     main session (never as a worker, never in the cloud: it needs the local DB and
-     `*.local.md`). A brainstorm in progress → leave it for the next tick.
+4. Act in the order of the *Tick priority*; workers only within `schedule.freeSlots`.
+   Last: `schedule.dreamDue` and no brainstorm running → run `my-day:dream` here in the
+   main session (never as a worker, never in the cloud: it needs the local DB and
+   `*.local.md`). A brainstorm in progress → leave it for the next tick.
 5. `$SM prune` once a day.
 6. `ScheduleWakeup`: prompt `/loop /my-day:loop`, `delaySeconds` = `schedule.delaySeconds`,
    `noop` = nothing changed.
@@ -72,7 +65,7 @@ Then `$SM dispatch <id> --agent <name> --status <new status>`. On completion:
   record with `$SM answer` / `$SM decline`; never re-ask; keep working meanwhile.
 - An answer or instruction that sets a standing rule → `my-day:config`.
 - `elaborate <id>` / `summary …` → `my-day:summary`. `dream` → `my-day:dream`. `pause` (`$SM pause`, no dispatch), `resume` (`$SM resume`),
-  `stop` (`ScheduleWakeup stop`; server stays), `retry <id>` (`$SM unfail <id>`,
+  `stop` (`$SM stop`, then `ScheduleWakeup stop`; the dashboard stays and shows the loop as stopped), `retry <id>` (`$SM unfail <id>`,
   `$SM set <id> attempts=0`).
 
 ## Dry run
