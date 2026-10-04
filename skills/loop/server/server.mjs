@@ -120,10 +120,12 @@ const server = createServer(async (req, res) => {
       if (qa) {
         const q = openQuestion(qa[1]);
         if (!q) return send(res, 404, { error: `no open question ${qa[1]}` });
-        const text = qa[2] === 'answer' ? String((await body(req)).text ?? '').trim().slice(0, 2000) : '';
+        // Answer text is required; a decline may carry an optional reason.
+        const text = String((await body(req)).text ?? '').trim().slice(0, 2000);
         if (qa[2] === 'answer' && !text) return send(res, 400, { error: 'answer text required' });
-        if (qa[2] === 'answer') S.answer(db, q.id, text); else S.decline(db, q.id);
-        S.addEvent(db, { itemId: q.item_id, kind: 'dashboard-answer', message: `${q.id} ${qa[2] === 'answer' ? `answered on dashboard: ${text}` : 'declined on dashboard'}`, data: { questionId: q.id, status: qa[2] === 'answer' ? 'answered' : 'declined', text } });
+        if (qa[2] === 'answer') S.answer(db, q.id, text); else S.decline(db, q.id, text);
+        const what = qa[2] === 'answer' ? `answered on dashboard: ${text}` : `declined on dashboard${text ? `: ${text}` : ''}`;
+        S.addEvent(db, { itemId: q.item_id, kind: 'dashboard-answer', message: `${q.id} ${what}`, data: { questionId: q.id, status: qa[2] === 'answer' ? 'answered' : 'declined', text } });
         broadcast('change', {});
         return send(res, 200, { ok: true });
       }

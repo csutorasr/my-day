@@ -22,7 +22,8 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
    `running`, `reviewsPending`, `openQuestions`, `failed`, `fromDashboard`. Code host and reviews are done
    (`covered` reviews, see QUERY-MY-REVIEWS.md, are not pending).
    `fromDashboard` = what the user did on the dashboard since the last tick: `dashboard-answer`
-   (a question answered/declined there — act on it exactly as on an answer in the session),
+   (a question answered/declined there — act on it exactly as on an answer in the session; a decline's
+   `text` is the user's reason),
    `dashboard-request` (`action`: rebase | fix-pipeline | fix-review | merge | retry | elaborate on `item` —
    the user's explicit go for that one action; do it this tick, `elaborate` → reply in the session via
    `my-day:summary`), `dashboard-pause` (just acknowledge it in the session).

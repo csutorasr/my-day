@@ -138,9 +138,11 @@ Add to `.gitignore`:
 - Items have short IDs: `bug-1`, `story-2`, `mr-4`, `review-5`.
 - `summary`, `summary since Monday`, `elaborate bug-1`, `retry bug-1`, `pause`, `resume`,
   `stop`.
-- The dashboard shows what needs you (answer or decline questions right there), your MRs
-  grouped by what they wait for, reviews (Done / Skip), agents, tickets and the activity log, and
-  sends web push notifications. Every MR / ticket / link has quick actions: copy, open, and a loop
+- The dashboard puts everything that needs you in one inbox: decisions (answer, approve or
+  decline right there, with the MR's title and gates beside the question), failures and review
+  requests (Done / Skip). Below it: your MRs grouped by what they wait for, agents, tickets and the
+  activity log; it also sends web push notifications. Every dashboard action waits a few seconds
+  with Undo before it reaches the loop. Every MR / ticket / link has quick actions: copy, open, and a loop
   action (rebase, fix pipeline, fix review, merge step, retry, ask why). Pause / resume the loop
   from the header.
 - Dashboard clicks reach the loop on its next `tick` (`fromDashboard`); the loop also runs

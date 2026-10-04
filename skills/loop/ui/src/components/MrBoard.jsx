@@ -1,15 +1,16 @@
 import { useDashboard } from '../dashboard.jsx';
-import { NEXT, gates, humanFailing, latestLinks } from '../format.js';
+import { NEXT, humanFailing, latestLinks, pendingAnswers } from '../format.js';
+import { Gates } from './Gates.jsx';
 import { Ref } from './Ref.jsx';
 
 const LANES = [
-  { key: 'you', title: 'Needs you', dot: 'warn', none: 'Nothing blocked on you' },
+  { key: 'you', title: 'Blocked on you', dot: 'warn', none: 'Nothing blocked on you' },
   { key: 'agent', title: 'Agent working', dot: 'accent', none: 'No agents running' },
   { key: 'wait', title: 'Waiting', dot: '', none: 'Nothing waiting' },
   { key: 'ready', title: 'Ready', dot: 'ok', none: 'Nothing ready yet' },
 ];
 
-// Open MRs grouped by what each waits for. Shared with the overview tiles.
+// Open MRs grouped by what each waits for. Shared with the status line.
 export function mrLanes(s) {
   const closed = new Set(s.closedStatuses);
   const asked = new Set(s.questions.filter((q) => q.item_id).map((q) => q.item_id));
@@ -25,13 +26,19 @@ export function mrLanes(s) {
 }
 
 function MrCard({ m }) {
-  const { state: s } = useDashboard();
+  const { state: s, isQueued } = useDashboard();
   const q = s.questions.find((x) => x.item_id === m.id);
+  const answered = pendingAnswers(s).get(m.id);
   const ticket = m.data?.ticketKeys?.[0];
   const links = latestLinks(m);
-  const nextText = q
+  // A decision taken on the dashboard stays visible on the card until the loop has acted on it.
+  const nextText = q && isQueued(`q:${q.id}`)
+    ? `Your answer to ${q.id} is being sent`
+    : q
     ? `Waiting for you · ${q.id}`
-    : m.agent_id
+    : answered
+      ? `${answered.status === 'declined' ? 'Declined' : 'Answered'} ${answered.questionId} · the loop acts on it at the next check`
+      : m.agent_id
       ? `Agent ${m.agent_id} working`
       : NEXT[m.data?.verdict] ?? (humanFailing(m.data?.failing ?? []) || 'Waiting');
   return (
@@ -41,15 +48,13 @@ function MrCard({ m }) {
         {ticket && <span className="mono muted tiny">{ticket}</span>}
       </div>
       <div className="t">{m.title}</div>
-      <div className="gates">
-        {gates(m, s.loop.targetBranch).map(([text, tone]) => <span key={text} className={`g ${tone}`}>{text}</span>)}
-      </div>
+      <Gates mr={m} target={s.loop.targetBranch} />
       {links.length > 0 && (
         <div className="links">
           {links.map((l) => <Ref key={l.kind} item={m} text={l.label ?? l.kind} url={l.url} actions={[]} />)}
         </div>
       )}
-      <div className={`next${q ? ' warn' : ''}`}>{nextText}</div>
+      <div className={`next${q ? ' warn' : answered ? ' ok' : ''}`}>{nextText}</div>
     </div>
   );
 }

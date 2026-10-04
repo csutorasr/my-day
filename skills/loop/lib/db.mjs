@@ -217,7 +217,8 @@ function closeQuestion(db, qid, status, answer) {
 }
 
 export const answer = (db, qid, text) => closeQuestion(db, qid, 'answered', text);
-export const decline = (db, qid) => closeQuestion(db, qid, 'declined');
+// An optional reason is kept as the question's answer, so the loop sees why it was declined.
+export const decline = (db, qid, reason) => closeQuestion(db, qid, 'declined', reason || undefined);
 
 export function listQuestions(db, { status, itemId } = {}) {
   const where = [];

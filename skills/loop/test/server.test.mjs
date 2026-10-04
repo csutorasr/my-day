@@ -70,6 +70,20 @@ test('answering a question from the dashboard closes it and logs a dashboard eve
   assert.equal(again.status, 404);
 });
 
+test('declining from the dashboard keeps the optional reason for the loop', async () => {
+  const withReason = S.ask(db, reviewId, 'Approve: force-push?');
+  const r = await fetch(`${base}/api/questions/${withReason}/decline`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ text: 'wait for the release' }) });
+  assert.equal(r.status, 200);
+  assert.equal(S.listQuestions(db, { status: 'declined' }).find((q) => q.id === withReason).answer, 'wait for the release');
+  const ev = S.listEvents(db, { limit: 5 }).find((e) => e.kind === 'dashboard-answer' && e.data.questionId === withReason);
+  assert.deepEqual([ev.data.status, ev.data.text], ['declined', 'wait for the release']);
+  assert.match(ev.message, /declined on dashboard: wait for the release/);
+
+  const bare = S.ask(db, reviewId, 'Approve: merge?');
+  assert.equal((await fetch(`${base}/api/questions/${bare}/decline`, { method: 'POST', headers: { origin: base } })).status, 200);
+  assert.equal(S.listQuestions(db, { status: 'declined' }).find((q) => q.id === bare).answer, null);
+});
+
 test('quick-action requests are validated and logged, never executed', async () => {
   const bad = await fetch(`${base}/api/items/${reviewId}/request`, { method: 'POST', headers: { origin: base }, body: JSON.stringify({ action: 'rm -rf' }) });
   assert.equal(bad.status, 400);

@@ -44,6 +44,14 @@ export function pendingRequests(state) {
   return out;
 }
 
+// Answers given on the dashboard that the loop has not picked up yet, by item id.
+export function pendingAnswers(state) {
+  const since = state?.loop.lastTickAt ?? '';
+  const out = new Map();
+  for (const e of state?.recent ?? []) if (e.kind === 'dashboard-answer' && e.ts > since && e.item_id) out.set(e.item_id, e.data ?? {});
+  return out;
+}
+
 // Extra links on an item, newest per kind (a pipeline link is added on every run; only the latest matters).
 export function latestLinks(i) {
   const latest = new Map();
