@@ -198,3 +198,8 @@ test('dream: never due outside working hours', () => {
   assert.equal(dreamDue(s, null, new Date(2026, 9, 3, 11, 0)), false); // Sat
   assert.equal(dreamDue({ ...s, dreamSchedule: 'Sat 10:00' }, null, new Date(2026, 9, 3, 11, 0)), false);
 });
+
+test('sync with forge none does nothing', () => {
+  const db = S.openDb(join(mkdtempSync(join(tmpdir(), 'myday-none-')), 'state.db'));
+  assert.deepEqual(sync(db, { forge: 'none' }), { skipped: 'forge: none' });
+});

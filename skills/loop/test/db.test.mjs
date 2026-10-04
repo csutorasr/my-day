@@ -15,7 +15,7 @@ test('ids are allocated per type and never reused', () => {
   assert.equal(S.upsertItem(db, { type: 'bug', ext: 'jira:ABC-1' }).id, 'bug-1');
   assert.equal(S.upsertItem(db, { type: 'bug', ext: 'jira:ABC-2' }).id, 'bug-2');
   assert.equal(S.upsertItem(db, { type: 'mr', ext: 'gitlab:a!1' }).id, 'mr-1');
-  assert.throws(() => S.upsertItem(db, { type: 'nope', ext: 'x' }), /unknown type/);
+  assert.throws(() => S.upsertItem(db, { type: 'No Type', ext: 'x' }), /unknown type/);
 });
 
 test('upsert is idempotent by ext key', () => {
@@ -159,4 +159,12 @@ test('meta migration upgrades an existing v1 database in place', () => {
   assert.equal(S.getMeta(db, 'lastDreamAt'), '2026-10-02T15:00:00.000Z');
   db.close();
   assert.equal(S.getMeta(S.openDb(file), 'lastDreamAt'), '2026-10-02T15:00:00.000Z'); // reopen: no re-migration
+});
+
+test('upsert accepts any slug type and numbers it by type', () => {
+  const { db } = fresh();
+  assert.equal(S.upsertItem(db, { type: '1on1', ext: 'lead:anna-2026-10' }).id, '1on1-1');
+  assert.equal(S.upsertItem(db, { type: 'request', ext: 'ux:r1' }).id, 'request-1');
+  assert.throws(() => S.upsertItem(db, { type: 'Bad Type', ext: 'x:1' }), /unknown type/);
+  assert.throws(() => S.upsertItem(db, { ext: 'x:2' }), /unknown type/);
 });
