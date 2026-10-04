@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useDashboard } from '../dashboard.jsx';
+import { useDashboard, useIsPhone } from '../dashboard.jsx';
 import { isApproval, label, nextCheck, plural, sentence } from '../format.js';
 import { Gates } from './Gates.jsx';
 import { CheckIcon } from './Icons.jsx';
@@ -8,8 +8,8 @@ import { Ref } from './Ref.jsx';
 // After an item leaves the inbox, keep keyboard focus in the inbox: the next item's first control,
 // else the previous one's, else the heading.
 function focusNext(from) {
-  const row = from.closest('.ask, li');
-  const targets = [...document.querySelectorAll('#needs .ask input, #needs li .btns button, #needs li .act')].filter((el) => !row?.contains(el));
+  const row = from.closest('[data-inbox-item]');
+  const targets = [...document.querySelectorAll('#needs [data-inbox-item]:not([data-queued]) :is(input, button):not([tabindex="-1"])')].filter((el) => !row?.contains(el));
   const after = targets.find((el) => row && (row.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
   (after ?? targets.at(-1) ?? document.getElementById('h-needs'))?.focus();
 }
@@ -29,8 +29,11 @@ function Queued({ text, k }) {
 // here without looking it up: title, and for an MR its merge gates.
 function Ask({ q }) {
   const { state: s, queue, isQueued } = useDashboard();
+  const phone = useIsPhone();
   const [text, setText] = useState('');
   const approval = isApproval(q);
+  // Approvals usually mean a merge or a force-push: decide those on a larger screen.
+  const blocked = approval && phone;
   const item = q.item ? s.items.find((i) => i.id === q.item.id) : null;
   const key = `q:${q.id}`;
   const question = sentence(q.text.replace(/^approve:\s*/i, ''));
@@ -45,7 +48,7 @@ function Ask({ q }) {
   };
 
   return (
-    <div className="ask">
+    <div className="ask" data-inbox-item={q.id} data-queued={isQueued(key) || undefined}>
       <div className="main">
         <div className="meta">
           <span className="mono muted small">{q.id}</span>
@@ -63,11 +66,15 @@ function Ask({ q }) {
       {isQueued(key) ? (
         <Queued k={key} text={`${approval ? 'Approval' : 'Answer'} queued.`} />
       ) : (
-        <form onSubmit={(e) => { e.preventDefault(); send(false, e.nativeEvent.submitter ?? e.currentTarget.elements.text); }}>
+        <form onSubmit={(e) => { e.preventDefault(); if (!blocked) send(false, e.nativeEvent.submitter ?? e.currentTarget.elements.text); }}>
           <label className="sr-only" htmlFor={`a-${q.id}`}>{approval ? 'Note for' : 'Answer'} {q.id}</label>
           <input type="text" id={`a-${q.id}`} name="text" value={text} onChange={(e) => setText(e.target.value)} placeholder={approval ? 'Optional note' : 'Your answer'} autoComplete="off" />
-          <button className="btn primary" type="submit">{approval ? 'Approve' : 'Send'}</button>
-          <button className="btn" type="button" onClick={(e) => send(true, e.currentTarget)}>Decline</button>
+          {blocked ? (
+            <span className="phone-note small">Approve from a larger screen. You can decline here.</span>
+          ) : (
+            <button className="btn primary" type="submit" data-primary>{approval ? 'Approve' : 'Send'}</button>
+          )}
+          <button className="btn" type="button" data-decline onClick={(e) => send(true, e.currentTarget)}>Decline</button>
         </form>
       )}
     </div>
@@ -76,7 +83,7 @@ function Ask({ q }) {
 
 function Failure({ f }) {
   return (
-    <li>
+    <li data-inbox-item={f.id}>
       <div className="main">
         <span className="row-head"><span className="kind bad">Failed</span><Ref item={f} /></span>
         <span className="t">{f.title}</span>
@@ -95,7 +102,7 @@ function Review({ r }) {
     queue({ key, label: `${done ? 'Mark' : 'Skip'} ${label(r)}${done ? ' reviewed' : ''}`, path: `/api/reviews/${r.id}/${done ? 'done' : 'skip'}`, ok: `${label(r)} ${done ? 'marked reviewed' : 'skipped'}.` });
   };
   return (
-    <li>
+    <li data-inbox-item={r.id} data-queued={isQueued(key) || undefined}>
       <div className="main">
         <span className="row-head"><span className="kind">Review</span><Ref item={r} actions={[]} /></span>
         <span className="t">{r.title}</span>
@@ -104,8 +111,8 @@ function Review({ r }) {
         <Queued k={key} text="Marked." />
       ) : (
         <span className="btns">
-          <button type="button" className="btn small" aria-label={`Mark ${label(r)} reviewed`} onClick={(e) => mark(true, e.currentTarget)}>Done</button>
-          <button type="button" className="btn small ghost" aria-label={`Skip ${label(r)}`} onClick={(e) => mark(false, e.currentTarget)}>Skip</button>
+          <button type="button" className="btn small" data-primary aria-label={`Mark ${label(r)} reviewed`} onClick={(e) => mark(true, e.currentTarget)}>Done</button>
+          <button type="button" className="btn small ghost" data-decline aria-label={`Skip ${label(r)}`} onClick={(e) => mark(false, e.currentTarget)}>Skip</button>
         </span>
       )}
     </li>
@@ -152,8 +159,8 @@ export function NeedsYou() {
     <section className="panel" id="needs" aria-labelledby="h-needs">
       <div className="head">
         <h2 id="h-needs" tabIndex={-1}>Needs you</h2>
-        <span className={`count${count ? ' warn' : ''}`}>{count || ''}</span>
-        <span className="muted small">{parts.length ? `${parts.join(' · ')}. ` : ''}Every action can be undone for a few seconds.</span>
+        <span className={`count${count ? ' warn' : ''}`} aria-label={count ? `${plural(count, 'item')} waiting` : undefined}>{count || ''}</span>
+        <span className="muted small">{parts.length ? `${parts.join(' · ')}. ` : ''}Every action can be undone for a few seconds.<span className="kbd-only"> Press ? for shortcuts.</span></span>
       </div>
       <div>{body}</div>
     </section>

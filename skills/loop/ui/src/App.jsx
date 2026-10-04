@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { DashboardProvider, useDashboard } from './dashboard.jsx';
 import { Activity } from './components/Activity.jsx';
 import { Agents } from './components/Agents.jsx';
@@ -8,29 +8,24 @@ import { NeedsYou } from './components/NeedsYou.jsx';
 import { Tickets } from './components/Tickets.jsx';
 import { StatusLine } from './components/StatusLine.jsx';
 import { Toasts } from './components/Toasts.jsx';
+import { ShortcutsDialog, useShortcuts } from './components/Shortcuts.jsx';
 
 function Dashboard() {
-  const { state, offline } = useDashboard();
-  const entered = useRef(false);
-
-  // Stagger the first paint; later updates (SSE) re-render in place without motion.
-  useEffect(() => {
-    if (!state || entered.current) return;
-    entered.current = true;
-    document.querySelectorAll('.panel, .lane').forEach((el, k) => {
-      el.classList.add('enter');
-      el.style.animationDelay = `${Math.min(k, 10) * 30}ms`;
-    });
-  }, [state]);
+  const { offline, updatedAt } = useDashboard();
+  const help = useRef(null);
+  const openHelp = useCallback(() => help.current?.showModal(), []);
+  useShortcuts(openHelp);
 
   return (
     <>
       <a className="skip" href="#main">Skip to content</a>
-      <Header />
+      <Header onShortcuts={openHelp} />
       <main id="main">
         {offline && (
           <div className="offline" role="alert">
-            Can’t reach the my-day server at this address. Retrying every few seconds. If it stopped, start it with <span className="mono">state.mjs bootstrap</span>.
+            <b>The dashboard lost its connection to the loop.</b>{' '}
+            {updatedAt ? `What you see is from ${new Date(updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} and may be out of date. ` : ''}
+            It reconnects by itself; if the loop stopped, start it again in Claude Code with <span className="mono">/my-day:loop</span>.
           </div>
         )}
         <StatusLine />
@@ -47,6 +42,7 @@ function Dashboard() {
         </div>
       </main>
       <Toasts />
+      <ShortcutsDialog dialogRef={help} />
     </>
   );
 }

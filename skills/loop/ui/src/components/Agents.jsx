@@ -1,4 +1,5 @@
 import { useDashboard } from '../dashboard.jsx';
+import { agentTask } from '../format.js';
 import { Ref } from './Ref.jsx';
 
 export function Agents() {
@@ -17,7 +18,7 @@ export function Agents() {
           {running.map((i) => (
             <div className="agent" key={i.id}>
               <span className="g wait">running</span>
-              <div className="main"><span className="body-sm">{i.agent_id}</span><Ref item={i} actions={[]} /></div>
+              <div className="main"><span className="body-sm">{agentTask(i)}</span><span className="row-head"><Ref item={i} actions={[]} /><span className="mono muted tiny">agent {i.agent_id}</span></span></div>
             </div>
           ))}
         </div>

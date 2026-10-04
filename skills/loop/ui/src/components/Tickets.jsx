@@ -7,7 +7,8 @@ export function Tickets() {
   const { state: s } = useDashboard();
   const closed = new Set(s?.closedStatuses ?? []);
   const tickets = (s?.items ?? []).filter((i) => !['mr', 'review'].includes(i.type));
-  const open = tickets.filter((i) => !closed.has(i.status));
+  // Failed tickets are in Needs you with their Retry; listing them here again would duplicate it.
+  const open = tickets.filter((i) => !closed.has(i.status) && !i.failed);
   const done = tickets.filter((i) => closed.has(i.status));
   return (
     <section className="panel" aria-labelledby="h-tickets">

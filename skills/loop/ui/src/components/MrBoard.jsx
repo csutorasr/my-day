@@ -1,7 +1,8 @@
+import { useState } from 'react';
 import { useDashboard } from '../dashboard.jsx';
-import { NEXT, humanFailing, latestLinks, pendingAnswers } from '../format.js';
+import { NEXT, humanFailing, latestLinks, pendingAnswers, plural } from '../format.js';
 import { Gates } from './Gates.jsx';
-import { Ref } from './Ref.jsx';
+import { Actions, Ref } from './Ref.jsx';
 
 const LANES = [
   { key: 'you', title: 'Blocked on you', dot: 'warn', none: 'Nothing blocked on you' },
@@ -42,9 +43,9 @@ function MrCard({ m }) {
       ? `Agent ${m.agent_id} working`
       : NEXT[m.data?.verdict] ?? (humanFailing(m.data?.failing ?? []) || 'Waiting');
   return (
-    <div className="card">
+    <li className="card">
       <div className="top">
-        <Ref item={m} />
+        <Ref item={m} actions={[]} />
         {ticket && <span className="mono muted tiny">{ticket}</span>}
       </div>
       <div className="t">{m.title}</div>
@@ -54,7 +55,34 @@ function MrCard({ m }) {
           {links.map((l) => <Ref key={l.kind} item={m} text={l.label ?? l.kind} url={l.url} actions={[]} />)}
         </div>
       )}
-      <div className={`next${q ? ' warn' : answered ? ' ok' : ''}`}>{nextText}</div>
+      <div className={`next${q ? ' warn' : answered ? ' ok' : ''}`}>
+        <span>{nextText}</span>
+        <span className="card-acts"><Actions item={m} /></span>
+      </div>
+    </li>
+  );
+}
+
+// A lane shows its first few cards; the rest stay one click away so a busy lane never takes the page.
+const LANE_CAP = 5;
+function Lane({ l }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? l.items : l.items.slice(0, LANE_CAP);
+  return (
+    <div className="lane">
+      <h3 className="title" id={`lane-${l.key}`}><span className={`dot ${l.dot}`} aria-hidden="true" />{l.title} <span className="n">{l.items.length}</span></h3>
+      {l.items.length ? (
+        <ul className="cards" aria-labelledby={`lane-${l.key}`}>
+          {shown.map((m) => <MrCard key={m.id} m={m} />)}
+        </ul>
+      ) : (
+        <div className="none">{l.none}</div>
+      )}
+      {l.items.length > LANE_CAP && (
+        <button type="button" className="btn small ghost more" onClick={() => setAll(!all)}>
+          {all ? 'Show fewer' : `Show ${plural(l.items.length - LANE_CAP, 'more merge request')}`}
+        </button>
+      )}
     </div>
   );
 }
@@ -70,15 +98,7 @@ export function MrBoard() {
       </div>
       <div className="board">
         {board
-          ? LANES.map(({ key }) => {
-              const l = board.lanes[key];
-              return (
-                <div className="lane" key={key}>
-                  <div className="title"><span className={`dot ${l.dot}`} />{l.title} <span className="n">{l.items.length}</span></div>
-                  {l.items.length ? l.items.map((m) => <MrCard key={m.id} m={m} />) : <div className="none">{l.none}</div>}
-                </div>
-              );
-            })
+          ? LANES.map(({ key }) => <Lane key={key} l={board.lanes[key]} />)
           : [0, 1].map((k) => <div className="lane" key={k}><span className="skel card-skel" /></div>)}
       </div>
     </section>
