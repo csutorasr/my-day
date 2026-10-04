@@ -6,6 +6,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import { useDashboard, useNotifications, useTheme } from '../dashboard.jsx';
 import { useLoopView } from '../loop.jsx';
+import { apiFor } from '../selection.js';
 import { Icon } from './Icon.jsx';
 import { mrLanes } from './MrBoard.jsx';
 
@@ -17,6 +18,17 @@ function ThemeSwitch() {
       <ToggleGroupItem value="light">Light</ToggleGroupItem>
       <ToggleGroupItem value="dark">Dark</ToggleGroupItem>
     </ToggleGroup>
+  );
+}
+
+// Pause / resume one loop. With several loops shown, each row of the health strip has its own.
+export function PauseButton({ loop, act, size }) {
+  const paused = loop.loop?.paused ?? loop.paused;
+  const name = loop.name;
+  return (
+    <Button variant="outline" size={size} onClick={() => act(`${apiFor(loop.id)}/${paused ? 'resume' : 'pause'}`, null, paused ? `${name}: loop resumed.` : `${name}: loop paused. Nothing new is started until you resume.`)} aria-label={`${paused ? 'Resume' : 'Pause'} loop ${name}`}>
+      {paused ? 'Resume loop' : 'Pause loop'}
+    </Button>
   );
 }
 
@@ -50,12 +62,12 @@ export function Header({ onShortcuts }) {
           <span className={cn('size-2.5 rounded-full bg-muted-foreground/40', live && 'bg-success shadow-[0_0_0_4px_var(--success-soft)] motion-safe:animate-[pulse-ring_2.4s_ease-in-out_infinite]')} aria-hidden="true" />
           <span className="sr-only" role="status">{live ? 'Connected to the loop' : 'Not connected to the loop'}</span>
           <h1 className="font-heading text-lg font-semibold tracking-tight">my-day</h1>
-          <span className="font-mono text-xs text-muted-foreground max-sm:hidden">{s ? s.dir.split('/').slice(-2, -1)[0] ?? s.dir : ''}</span>
+          <span className="font-mono text-xs text-muted-foreground max-sm:hidden">{s ? (s.multi ? `${s.loops.length} loops` : s.name) : ''}</span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge className={s?.dryRun ? 'bg-warning-soft text-warning' : 'bg-primary/10 text-link'}>{s?.dryRun ? 'Dry run' : 'Live'}</Badge>
-          {s?.loop.paused && <Badge className="bg-warning-soft text-warning">Paused</Badge>}
-          {s && <Badge variant="secondary" className="max-sm:hidden">Working hours {s.loop.workingHours}</Badge>}
+          {s && !s.multi && s.loop.paused && <Badge className="bg-warning-soft text-warning">Paused</Badge>}
+          {s && !s.multi && <Badge variant="secondary" className="max-sm:hidden">Working hours {s.loop.workingHours}</Badge>}
         </div>
         <span className="grow" />
         {loop.available && (
@@ -64,9 +76,7 @@ export function Header({ onShortcuts }) {
           </Button>
         )}
         <ThemeSwitch />
-        <Button variant="outline" onClick={() => act(`/api/loop/${s?.loop.paused ? 'resume' : 'pause'}`, null, s?.loop.paused ? 'Loop resumed.' : 'Loop paused. Nothing new is started until you resume.')}>
-          {s?.loop.paused ? 'Resume loop' : 'Pause loop'}
-        </Button>
+        {s && !s.multi && <PauseButton loop={s} act={act} />}
         <Button variant="ghost" className="text-muted-foreground" onClick={enable}>{NOTIFY_LABEL[notifications.permission]}</Button>
         <Button variant="ghost" className="text-muted-foreground max-sm:hidden" onClick={onShortcuts} aria-keyshortcuts="?"><Icon icon={KeyboardIcon} />Shortcuts</Button>
       </div>
