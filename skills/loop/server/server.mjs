@@ -1,19 +1,21 @@
-// my-day dashboard: read-mostly view of state.db with SSE live updates and web push.
+// my-day dashboard: one per machine. Read-mostly view of every registered loop's state.db
+// (~/.my-day/loops → <workspace>/.my-day/state.db) with SSE live updates and web push.
 import { createServer } from 'node:http';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, watch } from 'node:fs';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import * as S from '../lib/db.mjs';
-import { loopSettings } from '../lib/config.mjs';
+import { DEFAULTS, loopSettings } from '../lib/config.mjs';
+import { homeDir, homeSettings, listLoops, loopStatus } from '../lib/home.mjs';
 import { resolveRange } from '../lib/range.mjs';
 import { createPush } from './push.mjs';
 
-const { values } = parseArgs({ options: { dir: { type: 'string' }, port: { type: 'string' } } });
-const dir = resolve(values.dir ?? join(process.cwd(), '.my-day'));
-const settings = loopSettings(dir);
-const db = S.openDb(join(dir, 'state.db'));
-const push = await createPush(dir, settings.pushSubject);
+const { values } = parseArgs({ options: { home: { type: 'string' }, port: { type: 'string' }, 'push-subject': { type: 'string' } } });
+const home = resolve(values.home ?? homeDir());
+const settings = homeSettings(home, DEFAULTS);
+const dash = S.openDb(join(home, 'dashboard.db'));
+const push = await createPush(home, values['push-subject'] ?? settings.pushSubject);
 // SELF lets serverctl spot a server still running older / moved code and restart it.
 const SELF = fileURLToPath(import.meta.url);
 const PUBLIC = join(dirname(SELF), 'public');
@@ -37,20 +39,103 @@ const broadcast = (type, data) => {
 // (`state.mjs tick` → fromDashboard); the server itself never touches the code host or tracker.
 const REQUESTS = ['rebase', 'fix-pipeline', 'fix-review', 'merge', 'retry', 'elaborate'];
 
-const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
+// ---- loops: the registry entries, each with its store opened on first use.
+// A loop whose store is missing or unreadable carries `error` and is skipped, never fatal.
+const loops = new Map();
 
-function state() {
+function openLoop(entry) {
+  const known = loops.get(entry.id);
+  // Reuse an open store or a known failure; retry once a missing store appears.
+  if (known && known.dir === entry.dir && (known.db || !existsSync(join(entry.dir, 'state.db')) || known.error?.startsWith('cannot open'))) return known;
+  known?.db?.close();
+  const loop = { ...entry, db: null, error: null };
+  if (!existsSync(join(entry.dir, 'state.db'))) loop.error = `no store at ${entry.dir}`;
+  else {
+    try {
+      loop.db = S.openDb(join(entry.dir, 'state.db'));
+      loop.version = S.dataVersion(loop.db);
+      loop.lastEventId = S.listEvents(loop.db, { limit: 1 })[0]?.id ?? 0;
+    } catch (e) {
+      loop.error = `cannot open ${entry.dir}: ${e.message}`;
+    }
+  }
+  loops.set(entry.id, loop);
+  return loop;
+}
+
+function refreshLoops() {
+  const entries = listLoops(home);
+  const ids = new Set(entries.map((e) => e.id));
+  let changed = false;
+  for (const [id, l] of loops) {
+    if (!ids.has(id)) { l.db?.close(); loops.delete(id); changed = true; }
+  }
+  for (const e of entries) {
+    const before = loops.get(e.id);
+    const after = openLoop(e);
+    if (before !== after) changed = true;
+  }
+  if (changed) broadcast('change', {});
+}
+
+const meta = (l) => ({
+  sessionStartedAt: S.getMeta(l.db, 'sessionStartedAt'),
+  nextTickAt: S.getMeta(l.db, 'nextTickAt'),
+  stoppedAt: S.getMeta(l.db, 'stoppedAt'),
+  lastTickAt: S.getMeta(l.db, 'lastTickAt'),
+});
+
+// A store can break after it was opened (damaged file, a lock past the busy timeout): mark that loop
+// with the error and keep serving the others.
+function broken(l, e) {
+  try { l.db?.close(); } catch {}
+  l.db = null;
+  l.error = `cannot open ${l.dir}: ${e.message}`;
+}
+
+function summaryOf(l) {
+  try {
+    return summaryOfOpen(l);
+  } catch (e) {
+    broken(l, e);
+    return summaryOfOpen(l);
+  }
+}
+
+function summaryOfOpen(l) {
+  const base = { id: l.id, name: l.name, workspace: l.workspace };
+  if (!l.db) return { ...base, running: false, stopped: false, paused: false, error: l.error, counts: { questions: 0, failed: 0, reviews: 0 } };
+  const items = S.listItems(l.db);
+  return {
+    ...base,
+    ...loopStatus(meta(l)),
+    paused: S.getMeta(l.db, 'paused') === 'true',
+    counts: {
+      questions: S.listQuestions(l.db, { status: 'open' }).length,
+      failed: items.filter((i) => i.failed).length,
+      reviews: items.filter(openReview).length,
+    },
+  };
+}
+
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
+const openReview = (i) => i.type === 'review' && !['done', 'skipped', 'covered'].includes(i.status);
+
+function stateOf(l) {
+  const db = l.db;
+  const conf = loopSettings(l.dir);
   const items = S.listItems(db).map((i) => ({ ...i, links: S.linksOf(db, i.id) }));
   const byId = new Map(items.map((i) => [i.id, i]));
   const ref = (i) => (i ? { id: i.id, type: i.type, title: i.title, url: i.url, project: i.data?.project ?? null, iid: i.data?.iid ?? null } : null);
   const withHint = (i) => ({ ...i, hint: i.links.length || i.url ? null : `No resources yet. Ask in the session: \`elaborate ${i.id}\`.` });
   return {
-    dir,
-    dryRun: settings.dryRun,
+    ...summaryOf(l),
+    dir: l.dir,
+    dryRun: conf.dryRun,
     closedStatuses: S.CLOSED_STATUSES,
     push: push.enabled,
     items,
-    reviews: items.filter((i) => i.type === 'review' && !['done', 'skipped', 'covered'].includes(i.status)),
+    reviews: items.filter(openReview),
     failed: items.filter((i) => i.failed).map(withHint),
     questions: S.listQuestions(db, { status: 'open' }).map((q) => ({ ...q, item: ref(byId.get(q.item_id)) })),
     finishedToday: S.listEvents(db, { from: startOfToday() })
@@ -60,17 +145,15 @@ function state() {
       paused: S.getMeta(db, 'paused') === 'true',
       lastTickAt: S.getMeta(db, 'lastTickAt'),
       nextTickAt: S.getMeta(db, 'nextTickAt'),
-      workingHours: settings.workingHours,
-      workingDays: settings.workingDays,
-      maxAgents: settings.maxAgents,
-      targetBranch: settings.targetBranch,
+      workingHours: conf.workingHours,
+      workingDays: conf.workingDays,
+      maxAgents: conf.maxAgents,
+      targetBranch: conf.targetBranch,
     },
     requests: REQUESTS,
     recent: S.listEvents(db, { limit: 50 }),
   };
 }
-
-const openQuestion = (qid) => S.listQuestions(db, { status: 'open' }).find((q) => q.id === qid) ?? null;
 
 const send = (res, code, body, type = 'application/json') => {
   res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' });
@@ -98,67 +181,112 @@ function staticFile(pathname) {
   return { body: readFileSync(file), type, cache: rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-store' };
 }
 
+// POST /api/loops/:loop/… — the same actions as before 0.8, against that loop's store.
+async function loopAction(req, res, db, rest) {
+  const m = /^\/reviews\/([\w-]+)\/(done|skip)$/.exec(rest);
+  if (m) {
+    const item = S.getItem(db, m[1]);
+    if (!item || item.type !== 'review') return send(res, 404, { error: `no review ${m[1]}` });
+    S.setFields(db, item.id, { status: m[2] === 'done' ? 'done' : 'skipped' });
+    S.addEvent(db, { itemId: item.id, kind: `review-${m[2]}`, message: `${item.id} marked ${m[2]} on dashboard` });
+    return done(res);
+  }
+  const qa = /^\/questions\/(q-\d+)\/(answer|decline)$/.exec(rest);
+  if (qa) {
+    const q = S.listQuestions(db, { status: 'open' }).find((x) => x.id === qa[1]);
+    if (!q) return send(res, 404, { error: `no open question ${qa[1]}` });
+    // Answer text is required; a decline may carry an optional reason.
+    const text = String((await body(req)).text ?? '').trim().slice(0, 2000);
+    if (qa[2] === 'answer' && !text) return send(res, 400, { error: 'answer text required' });
+    if (qa[2] === 'answer') S.answer(db, q.id, text); else S.decline(db, q.id, text);
+    const what = qa[2] === 'answer' ? `answered on dashboard: ${text}` : `declined on dashboard${text ? `: ${text}` : ''}`;
+    S.addEvent(db, { itemId: q.item_id, kind: 'dashboard-answer', message: `${q.id} ${what}`, data: { questionId: q.id, status: qa[2] === 'answer' ? 'answered' : 'declined', text } });
+    return done(res);
+  }
+  const rq = /^\/items\/([\w-]+)\/request$/.exec(rest);
+  if (rq) {
+    const item = S.getItem(db, rq[1]);
+    if (!item) return send(res, 404, { error: `no item ${rq[1]}` });
+    const { action } = await body(req);
+    if (!REQUESTS.includes(action)) return send(res, 400, { error: `unknown action ${action}` });
+    S.addEvent(db, { itemId: item.id, kind: 'dashboard-request', message: `${item.id}: ${action} requested on dashboard`, data: { action } });
+    return done(res);
+  }
+  const pz = /^\/(pause|resume)$/.exec(rest);
+  if (pz) {
+    S.setMeta(db, 'paused', pz[1] === 'pause' ? 'true' : 'false');
+    S.addEvent(db, { kind: 'dashboard-pause', message: `loop ${pz[1] === 'pause' ? 'paused' : 'resumed'} on dashboard`, data: { paused: pz[1] === 'pause' } });
+    return done(res);
+  }
+  return send(res, 404, { error: 'not found' });
+}
+
+function done(res) {
+  broadcast('change', {});
+  send(res, 200, { ok: true });
+}
+
+// The loop a /api/loops/:id/… route names, or a 404 already sent.
+function loopFor(res, id) {
+  refreshLoops();
+  const l = loops.get(id);
+  if (!l) { send(res, 404, { error: `no loop ${id}` }); return null; }
+  if (!l.db) { send(res, 404, { error: l.error }); return null; }
+  return l;
+}
+
 const server = createServer(async (req, res) => {
   const port = server.address().port;
   const allowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`];
   if (!allowedHosts.includes(req.headers.host)) return send(res, 403, { error: 'bad host' });
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
+    const scoped = /^\/api\/loops\/([0-9a-f]{12})(\/.*)$/.exec(url.pathname);
     if (req.method === 'POST') {
       const origin = req.headers.origin;
       if (origin && !allowedHosts.map((h) => `http://${h}`).includes(origin)) return send(res, 403, { error: 'cross-origin' });
-      const m = /^\/api\/reviews\/([\w-]+)\/(done|skip)$/.exec(url.pathname);
-      if (m) {
-        const item = S.getItem(db, m[1]);
-        if (!item || item.type !== 'review') return send(res, 404, { error: `no review ${m[1]}` });
-        S.setFields(db, item.id, { status: m[2] === 'done' ? 'done' : 'skipped' });
-        S.addEvent(db, { itemId: item.id, kind: `review-${m[2]}`, message: `${item.id} marked ${m[2]} on dashboard` });
-        broadcast('change', {});
-        return send(res, 200, { ok: true });
-      }
-      const qa = /^\/api\/questions\/(q-\d+)\/(answer|decline)$/.exec(url.pathname);
-      if (qa) {
-        const q = openQuestion(qa[1]);
-        if (!q) return send(res, 404, { error: `no open question ${qa[1]}` });
-        // Answer text is required; a decline may carry an optional reason.
-        const text = String((await body(req)).text ?? '').trim().slice(0, 2000);
-        if (qa[2] === 'answer' && !text) return send(res, 400, { error: 'answer text required' });
-        if (qa[2] === 'answer') S.answer(db, q.id, text); else S.decline(db, q.id, text);
-        const what = qa[2] === 'answer' ? `answered on dashboard: ${text}` : `declined on dashboard${text ? `: ${text}` : ''}`;
-        S.addEvent(db, { itemId: q.item_id, kind: 'dashboard-answer', message: `${q.id} ${what}`, data: { questionId: q.id, status: qa[2] === 'answer' ? 'answered' : 'declined', text } });
-        broadcast('change', {});
-        return send(res, 200, { ok: true });
-      }
-      const rq = /^\/api\/items\/([\w-]+)\/request$/.exec(url.pathname);
-      if (rq) {
-        const item = S.getItem(db, rq[1]);
-        if (!item) return send(res, 404, { error: `no item ${rq[1]}` });
-        const { action } = await body(req);
-        if (!REQUESTS.includes(action)) return send(res, 400, { error: `unknown action ${action}` });
-        S.addEvent(db, { itemId: item.id, kind: 'dashboard-request', message: `${item.id}: ${action} requested on dashboard`, data: { action } });
-        broadcast('change', {});
-        return send(res, 200, { ok: true });
-      }
-      const pz = /^\/api\/loop\/(pause|resume)$/.exec(url.pathname);
-      if (pz) {
-        S.setMeta(db, 'paused', pz[1] === 'pause' ? 'true' : 'false');
-        S.addEvent(db, { kind: 'dashboard-pause', message: `loop ${pz[1] === 'pause' ? 'paused' : 'resumed'} on dashboard`, data: { paused: pz[1] === 'pause' } });
-        broadcast('change', {});
-        return send(res, 200, { ok: true });
+      if (scoped) {
+        const l = loopFor(res, scoped[1]);
+        return l && loopAction(req, res, l.db, scoped[2]);
       }
       if (url.pathname === '/api/push/subscribe') {
         const sub = await body(req);
         if (!sub?.endpoint) return send(res, 400, { error: 'subscription required' });
-        S.addSubscription(db, sub);
+        S.addSubscription(dash, sub);
         return send(res, 200, { ok: true });
       }
       return send(res, 404, { error: 'not found' });
     }
-    if (url.pathname === '/health') return send(res, 200, { ok: true, dir, pid: process.pid, push: push.enabled, code: SELF });
-    if (url.pathname === '/api/state') return send(res, 200, state());
-    if (url.pathname === '/api/summary') {
+    if (url.pathname === '/health') return send(res, 200, { ok: true, home, pid: process.pid, push: push.enabled, code: SELF });
+    if (url.pathname === '/api/loops') {
+      refreshLoops();
+      return send(res, 200, [...loops.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)).map(summaryOf));
+    }
+    if (url.pathname === '/api/state') {
+      refreshLoops();
+      const asked = url.searchParams.get('loops');
+      const usable = [...loops.values()].filter((l) => l.db).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+      let pick;
+      if (asked !== null) {
+        const ids = asked.split(',').filter(Boolean);
+        pick = ids.map((id) => loops.get(id)).filter((l) => l?.db);
+      } else {
+        // Default: the running loops; none running → all of them, so the page is never empty for no reason.
+        const running = usable.filter((l) => summaryOf(l).running);
+        pick = running.length ? running : usable;
+      }
+      const out = [];
+      for (const l of pick) {
+        try { out.push(stateOf(l)); } catch (e) { broken(l, e); }
+      }
+      return send(res, 200, { loops: out });
+    }
+    if (scoped && scoped[2] === '/summary') {
+      const l = loopFor(res, scoped[1]);
+      if (!l) return;
+      // (errors here end up as a 500 for this one request only)
       const q = Object.fromEntries(url.searchParams);
-      return send(res, 200, S.summary(db, resolveRange({ ...q, today: q.today === '1', yesterday: q.yesterday === '1' })));
+      return send(res, 200, S.summary(l.db, resolveRange({ ...q, today: q.today === '1', yesterday: q.yesterday === '1' })));
     }
     if (url.pathname === '/api/push/key') return send(res, 200, { enabled: push.enabled, publicKey: push.publicKey });
     if (url.pathname === '/api/stream') {
@@ -179,29 +307,47 @@ const server = createServer(async (req, res) => {
   }
 });
 
-// Poll for commits from other connections (the session CLI) and fan out.
-let lastVersion = S.dataVersion(db);
-let lastEventId = S.listEvents(db, { limit: 1 })[0]?.id ?? 0;
+// Poll every loop's store for commits from other connections (the loop sessions' CLI) and fan out.
 setInterval(async () => {
-  const v = S.dataVersion(db);
-  if (v === lastVersion) return;
-  lastVersion = v;
-  broadcast('change', {});
-  const fresh = S.listEvents(db, { afterId: lastEventId });
-  if (fresh.length) lastEventId = fresh.at(-1).id;
-  for (const e of fresh) {
-    if (!NOTIFY[e.kind]) continue;
-    const item = e.item_id ? S.getItem(db, e.item_id) : null;
-    const payload = { title: NOTIFY[e.kind], body: e.message, url: item?.url ?? '/', tag: `${e.kind}-${e.item_id ?? e.id}` };
-    broadcast('notify', payload);
-    await push.send(db, payload);
+  const many = loops.size > 1;
+  for (const l of [...loops.values()]) {
+    try {
+      await pollLoop(l, many);
+    } catch (e) {
+      // Closed under us (loop forgotten / moved) or broken: only that loop is affected.
+      if (loops.get(l.id) === l) broken(l, e);
+    }
   }
 }, 1000).unref();
 
+async function pollLoop(l, many) {
+  {
+    if (!l.db) return;
+    const v = S.dataVersion(l.db);
+    if (v === l.version) return;
+    l.version = v;
+    broadcast('change', {});
+    const fresh = S.listEvents(l.db, { afterId: l.lastEventId });
+    if (fresh.length) l.lastEventId = fresh.at(-1).id;
+    for (const e of fresh) {
+      if (!NOTIFY[e.kind]) continue;
+      const item = e.item_id ? S.getItem(l.db, e.item_id) : null;
+      const title = many ? `${l.name} · ${NOTIFY[e.kind]}` : NOTIFY[e.kind];
+      const payload = { title, body: e.message, url: item?.url ?? '/', tag: `${l.id}-${e.kind}-${e.item_id ?? e.id}` };
+      broadcast('notify', payload);
+      await push.send(dash, payload);
+    }
+  }
+}
+
+// New or removed loops: watch the registry folder, and rescan in case the watch misses one.
+refreshLoops();
+try { watch(join(home, 'loops'), () => refreshLoops()).unref(); } catch { /* folder appears with the first registration */ }
+setInterval(refreshLoops, 5000).unref();
 setInterval(() => broadcast('ping', {}), 25000).unref();
 
 server.listen(Number(values.port ?? settings.port), '127.0.0.1', () => {
-  console.log(`my-day server listening on http://127.0.0.1:${server.address().port} (dir ${dir}, push ${push.enabled ? 'on' : 'off'})`);
+  console.log(`my-day server listening on http://127.0.0.1:${server.address().port} (home ${home}, push ${push.enabled ? 'on' : 'off'})`);
 });
 
-for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { server.close(); db.close(); process.exit(0); });
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { server.close(); for (const l of loops.values()) l.db?.close(); dash.close(); process.exit(0); });
