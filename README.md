@@ -9,6 +9,8 @@ Everything is configured per workspace in plain markdown (`.my-day/*.md`), so th
 skills work with Jira, GitHub Issues, GitLab Issues, Linear or no tracker at all, on GitLab
 or GitHub.
 
+![The my-day dashboard: needs-you questions, the MR board, reviews, agents and activity](docs/dashboard.png)
+
 ## How it helps
 
 ```mermaid
@@ -175,6 +177,22 @@ orchestrator writes all task state; workers only report a JSON result.
 ```bash
 npm test     # node --test, no dependencies needed
 ```
+
+The dashboard UI is a React app built with Vite (`skills/loop/ui`). The build output in
+`skills/loop/server/public` is committed, so an installed plugin never builds anything.
+
+```bash
+npm install          # Vite, React and Playwright, development only
+npm run ui:dev       # hot reload against the running dashboard (MY_DAY_URL, default :4711)
+npm run ui:demo      # the real server on an imaginary workspace (skills/loop/e2e/seed.mjs), port 4712
+npm run ui:dev:demo  # hot reload against `ui:demo`
+npm run ui:build     # rebuild skills/loop/server/public; commit the result
+npm run test:e2e     # build, seed the imaginary workspace, drive the dashboard in Chrome
+```
+
+`npm test` fails when the committed build is older than the UI sources. `npm run test:e2e`
+also rewrites the screenshot at the top of this README (`docs/dashboard.png`); commit it after a
+visible UI change, see [AGENTS.md](AGENTS.md).
 
 Status: early. Used daily on a Jira + GitLab workspace; the GitHub provider is covered by
 fixture tests only.

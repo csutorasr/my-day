@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Unit tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # No install: the plugin and its tests run on Node alone, as an installed plugin does.
+      - run: npm test
+
+  ui-build:
+    name: Committed dashboard build is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run ui:build
+      # An installed plugin serves skills/loop/server/public as committed and never builds,
+      # so the committed files must be exactly what the sources build to.
+      - name: Fail if the built frontend was not committed
+        run: |
+          git add --intent-to-add skills/loop/server/public
+          if ! git diff --exit-code --stat -- skills/loop/server/public; then
+            echo "::error::skills/loop/server/public does not match the UI sources. Run 'npm run ui:build' and commit the result."
+            exit 1
+          fi
+
+  e2e:
+    name: End-to-end (imaginary workspace)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # Playwright's own Chromium instead of a local Google Chrome.
+      - run: npm run test:e2e
+        env:
+          PW_CHANNEL: ''
+      # The screenshot is for review only; fonts render differently on CI, so it is not diffed.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dashboard-screenshot
+          path: docs/dashboard.png
