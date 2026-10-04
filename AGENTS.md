@@ -10,7 +10,9 @@ Notes for coding agents working on this repo. Read `README.md` first.
   `LOOP.md`'s `## Files` section is the manifest `config missing` checks.
 - `skills/loop/lib`: state DB, config, forge and helpers; `home.mjs` is the machine home
   (`~/.my-day`, `MY_DAY_HOME`): loop registry, liveness, migration. `skills/loop/server`: the one
-  dashboard server per machine, reading every registered loop's `state.db`.
+  dashboard server per machine, reading every registered loop's `state.db`. `runs.mjs` is the
+  `claude -p` runner (`runner: claude-p`): chain files in `.my-day/runs/`; its tests use
+  `test/fixtures/fake-claude.mjs` via `CLAUDE_BIN` — never start a real `claude` in tests.
 - `skills/loop/ui`: the dashboard UI (React + Vite + Tailwind v4 + shadcn/ui on Base UI), an npm
   workspace. `src/components/ui` is shadcn's (add with `pnpm dlx shadcn@latest add <name>` run in
   `skills/loop/ui`); app components compose them. `skills/loop/test`: `node --test` suites.

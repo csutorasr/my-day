@@ -35,7 +35,16 @@ function seedShop(dir) {
 
   // Tickets.
   const wishlist = ticket('subtask', 'SHOP-42', '[BE] Wishlist storage', 'post-mr', { branch: 'feat/SHOP-42-wishlist-storage', repos: 'backend' });
-  ticket('bug', 'SHOP-57', 'Discount code applied twice at checkout', 'developing', { branch: 'fix/SHOP-57-double-discount', repos: 'backend', attempts: 2 });
+  const discount = ticket('bug', 'SHOP-57', 'Discount code applied twice at checkout', 'developing', { branch: 'fix/SHOP-57-double-discount', repos: 'api-spec,backend', attempts: 3, agent_id: 'run:bug-1-3' });
+  // A claude -p chain (runner: claude-p) for the bug: api-spec is done, backend runs now.
+  mkdirSync(join(dir, 'runs'), { recursive: true });
+  writeFileSync(join(dir, 'runs', 'bug-1-3.json'), JSON.stringify({
+    id: 'bug-1-3', item: discount, kind: 'bug', status: 'running', startedAt: ago(14), endedAt: null,
+    steps: [
+      { repo: 'api-spec', status: 'done', startedAt: ago(14), endedAt: ago(9) },
+      { repo: 'backend', status: 'running', startedAt: ago(9) },
+    ],
+  }));
   ticket('story', 'SHOP-30', 'Wishlist', 'in-subtasks');
   const flaky = ticket('bug', 'SHOP-51', 'Order e-mail shows the wrong currency', 'developing', { attempts: 3 });
   ticket('bug', 'SHOP-48', 'Search ignores accented characters', 'done');
