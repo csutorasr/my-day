@@ -7,9 +7,10 @@ import * as S from '../lib/db.mjs';
 import { resolveRange } from '../lib/range.mjs';
 import { OPTIONAL, findMissing, requiredFiles, readConfig, loopSettings } from '../lib/config.mjs';
 import * as server from '../lib/serverctl.mjs';
-import { schedule } from '../lib/schedule.mjs';
+import { inWorkingHours, schedule } from '../lib/schedule.mjs';
 import { sync } from '../lib/sync.mjs';
 import { dispatch, reconcile } from '../lib/reconcile.mjs';
+import { collectRuns, finishedSteps, listChains, startChain, stopChain } from '../lib/runs.mjs';
 import { forget, homeDir, homeSettings, listLoops, loopStatus, migrate, register } from '../lib/home.mjs';
 
 const HELP = `my-day state CLI   (state dir: $MY_DAY_DIR or ./.my-day; machine home: $MY_DAY_HOME or ~/.my-day)
@@ -19,9 +20,12 @@ Loop       bootstrap [--new-session]  config check, DB, dashboard, orphaned agen
            sync | schedule            the two halves of tick
            pause | resume             stop / restart dispatching (the dashboard has the same button)
            stop                       mark this loop stopped (the dashboard hides it by default)
-           watch-dashboard [--interval ms]   stream dashboard clicks as JSON lines (run as a monitor)
+           watch [--interval ms]      stream dashboard clicks and finished claude -p runs as JSON lines
+                                      (run as a monitor; watch-dashboard is the same)
            dispatch <id> --agent <name> [--status s]   record a started worker (attempts++)
            reconcile <id> [--result '<json|message>'] (or stdin)   apply a worker's report
+Runs       run <id> --kind <k> --chain <repo>=<worktree>[,…] [--status s] < task   claude -p per repo, in order
+           runs [--json] | run-stop <id>   claude -p chains (runner: claude-p); stop an item's chain
 
 Items      upsert --type bug|story|subtask|mr|review --ext <jira:KEY|gitlab:path!iid> [--title] [--url]
                   [--status] [--parent <id>] [--repos a,b] [--data '{json}']
@@ -58,6 +62,7 @@ const { values: opt, positionals: pos } = parseArgs({
     today: { type: 'boolean' }, yesterday: { type: 'boolean' },
     since: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' },
     json: { type: 'boolean' }, interval: { type: 'string' }, once: { type: 'boolean' },
+    chain: { type: 'string' }, task: { type: 'string' },
     agent: { type: 'string' }, result: { type: 'string' }, report: { type: 'string' }, 'new-session': { type: 'boolean' },
   },
 });
@@ -297,7 +302,10 @@ try {
       const missing = findMissing(dir);
       if (missing.length) { out({ missing }); break; }
       const settings = loopSettings(dir);
-      const orphans = S.listItems(db()).filter((i) => i.agent_id);
+      // Subagents die with their session; claude -p runs (agent run:<chain>) outlive it and are collected
+      // by tick — unless their chain file is gone, then nothing ever will.
+      const liveChains = new Set(listChains(dir).filter((c) => c.status === 'running').map((c) => `run:${c.id}`));
+      const orphans = S.listItems(db()).filter((i) => i.agent_id && !liveChains.has(i.agent_id));
       if (opt['new-session']) {
         for (const o of orphans) {
           S.setFields(db(), o.id, { agent_id: '' });
@@ -324,6 +332,9 @@ try {
       const settings = loopSettings(dir);
       let delta;
       try { delta = sync(db(), settings); } catch (e) { delta = { error: e.message }; }
+      // While paused or outside working hours a finished repo's next repo waits (no dispatches).
+      const mayStart = S.getMeta(db(), 'paused') !== 'true' && inWorkingHours(settings);
+      const runs = collectRuns(db(), dir, settings, new Date(), { startNext: mayStart });
       const items = S.listItems(db());
       // Items waiting on the user (open question) or blocked are not actionable until answered.
       const waiting = new Set(S.listQuestions(db(), { status: 'open' }).map((q) => q.item_id));
@@ -349,6 +360,7 @@ try {
       out({
         schedule: sched,
         sync: delta,
+        runs,
         fromDashboard: dash.map((e) => ({ kind: e.kind, item: e.item_id, ...(e.data ?? {}) })),
         act: byVerdict,
         tickets: actionable.filter((i) => ['bug', 'story', 'subtask'].includes(i.type) && !i.agent_id).map((i) => `${i.id}:${i.status}`),
@@ -360,6 +372,7 @@ try {
       });
       break;
     }
+    case 'watch':
     case 'watch-dashboard': {
       // One JSON line per new dashboard answer / request / pause; runs until killed. The session arms it
       // as a background monitor so a click wakes the loop instead of waiting for the next wakeup.
@@ -367,10 +380,18 @@ try {
       const KINDS = ['dashboard-answer', 'dashboard-request', 'dashboard-pause'];
       const every = Number(opt.interval ?? 1000);
       let cursor = Number(S.getMeta(db(), 'lastDashboardEventId') ?? 0);
+      const reported = new Set();
       for (;;) {
         for (const e of S.listEvents(db(), { afterId: cursor })) {
           cursor = e.id;
           if (KINDS.includes(e.kind)) process.stdout.write(JSON.stringify({ kind: e.kind, item: e.item_id, message: e.message, ...(e.data ?? {}) }) + '\n');
+        }
+        // A claude -p run whose process ended: the next tick collects it.
+        for (const f of finishedSteps(dir)) {
+          const key = `${f.chain}:${listChains(dir).find((c) => c.id === f.chain)?.steps.findIndex((x) => x.status === 'running')}`;
+          if (reported.has(key)) continue;
+          reported.add(key);
+          process.stdout.write(JSON.stringify({ kind: 'run-finished', item: f.item, chain: f.chain }) + '\n');
         }
         if (opt.once) break;
         await new Promise((ok) => setTimeout(ok, every));
@@ -406,6 +427,31 @@ try {
       opt.json ? out(rows) : out(rows.map((r) => `${r.name.padEnd(20)} ${r.error ? 'error' : r.running ? (r.paused ? 'paused' : 'running') : r.stopped ? 'stopped' : 'idle'}  ${r.workspace}`).join('\n') || '(none)');
       break;
     }
+    case 'run': {
+      if (!opt.kind || !opt.chain) die('run <id> --kind <k> --chain <repo>=<worktree>[,…] [--status s] < task (or --task "…")');
+      // The task normally comes on stdin, so ticket text never passes through a shell command line.
+      let task = opt.task;
+      if (task === undefined) { const c = []; for await (const x of process.stdin) c.push(x); task = Buffer.concat(c).toString('utf8').trim(); }
+      const steps = opt.chain.split(',').map((p) => {
+        const eq = p.indexOf('=');
+        if (eq < 1) die(`expected <repo>=<worktree>, got ${p}`);
+        return { repo: p.slice(0, eq), cwd: resolve(p.slice(eq + 1)) };
+      });
+      const settings = loopSettings(dir);
+      const id = resolveId(args[0]);
+      const r = await startChain(db(), dir, settings, { item: id, kind: opt.kind, task, dryRun: settings.dryRun, workspace: resolve(dir, '..'), steps });
+      if (r.started && opt.status) S.setFields(db(), id, { status: opt.status });
+      out(r);
+      break;
+    }
+    case 'runs': {
+      const chains = listChains(dir);
+      opt.json ? out(chains) : out(chains.map((c) => `${c.id.padEnd(16)} ${c.status.padEnd(9)} ${c.steps.map((x) => `${x.repo} ${x.status}`).join(' → ')}`).join('\n') || '(none)');
+      break;
+    }
+    case 'run-stop':
+      out(stopChain(db(), dir, loopSettings(dir), resolveId(args[0])));
+      break;
     case 'dispatch':
       if (!opt.agent) die('dispatch needs --agent');
       out(dispatch(db(), resolveId(args[0]), { agent: opt.agent, status: opt.status }));
