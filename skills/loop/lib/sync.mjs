@@ -17,6 +17,7 @@ const stale = (data, updatedAt, now) =>
   ['running', 'pending', 'created'].includes(data.pipeline?.status);
 
 export function sync(db, settings, { now = Date.now(), provider } = {}) {
+  if (settings.forge === 'none') return { skipped: 'forge: none' };
   const p = provider ?? PROVIDERS[settings.forge];
   if (!p) throw new Error(`unknown forge ${settings.forge}`);
   gitlab.setTicketPattern(settings.ticketPattern);
