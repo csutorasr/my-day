@@ -121,6 +121,22 @@ test('a store that breaks after it was opened is reported on its loop; the other
   forget(home, wsD);
 });
 
+test('state lists the loop\'s claude -p runs; Stop run is a request the loop carries out', async () => {
+  mkdirSync(join(wsA, 'runs'), { recursive: true });
+  const now = new Date().toISOString();
+  writeFileSync(join(wsA, 'runs', 'bug-1-1.json'), JSON.stringify({
+    id: 'bug-1-1', item: 'bug-1', kind: 'bug', status: 'running', startedAt: now, endedAt: null,
+    steps: [{ repo: 'api', status: 'done', startedAt: now, endedAt: now, pid: 1 }, { repo: 'web', status: 'running', startedAt: now, pid: 2 }],
+  }));
+  const st = await stateA();
+  assert.deepEqual(st.runs.map((r) => [r.id, r.item, r.status]), [['bug-1-1', 'bug-1', 'running']]);
+  assert.deepEqual(st.runs[0].steps.map((x) => [x.repo, x.status]), [['api', 'done'], ['web', 'running']]);
+  assert.equal(st.runs[0].steps[0].pid, undefined, 'process details stay on the machine');
+  assert.ok(st.requests.includes('stop'));
+  assert.equal((await post(`/api/loops/${idA}/items/bug-1/request`, { action: 'stop' })).status, 200);
+  assert.equal(S.listEvents(db, { limit: 1 })[0].data.action, 'stop');
+});
+
 test('state lists the open review, not covered ones', async () => {
   const st = await stateA();
   assert.deepEqual(st.reviews.map((r) => r.id), [reviewId]);

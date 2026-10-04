@@ -11,7 +11,7 @@ export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 export const sentence = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
 // Quick actions the loop understands (server REQUESTS); labels per action.
-export const ACTION_LABEL = { rebase: 'Rebase', 'fix-pipeline': 'Fix pipeline', 'fix-review': 'Fix review', merge: 'Merge', retry: 'Retry', elaborate: 'Explain' };
+export const ACTION_LABEL = { rebase: 'Rebase', 'fix-pipeline': 'Fix pipeline', 'fix-review': 'Fix review', merge: 'Merge', retry: 'Retry', elaborate: 'Explain', stop: 'Stop run' };
 // What each action asks the loop to do, for tooltips and screen readers.
 export const ACTION_HINT = {
   rebase: 'rebase onto the target branch (force-push with lease)',
@@ -20,6 +20,7 @@ export const ACTION_HINT = {
   merge: 'merge it if every merge gate passes',
   retry: 'try this item again',
   elaborate: 'explain where this item stands, in the session',
+  stop: 'stop its claude -p run (the repos not started yet are cancelled)',
 };
 // Actions that rewrite or merge shared history: never offered on a phone.
 export const RISKY_ACTIONS = new Set(['rebase', 'merge']);
@@ -40,6 +41,7 @@ export function label(i) {
 export function actionsFor(i, state) {
   if (!i || !state || i.type === 'review') return [];
   const acts = [];
+  if (i.agent_id?.startsWith('run:')) acts.push('stop');
   if (i.failed) acts.push('retry');
   const v = VERDICT_ACTION[i.data?.verdict];
   if (i.type === 'mr' && v && !i.agent_id) acts.push(v);
@@ -99,8 +101,17 @@ export const dotFor = (k) => (BAD.has(k) ? 'bad' : GOOD.has(k) ? 'ok' : ATTN.has
 export const isApproval = (q) => /^approve\b/i.test(q.text);
 
 // Event kinds as words: "pipeline-green" → "pipeline green", with a few clearer names.
-const EVENT_WORDS = { dispatched: 'agent started', worker: 'agent finished', 'review-requested': 'review requested', 'dashboard-request': 'requested on the dashboard', 'dashboard-answer': 'answered on the dashboard', 'dashboard-pause': 'paused on the dashboard', status: 'status change' };
+const EVENT_WORDS = { 'run-started': 'run started', 'run-finished': 'runs finished', dispatched: 'agent started', worker: 'agent finished', 'review-requested': 'review requested', 'dashboard-request': 'requested on the dashboard', 'dashboard-answer': 'answered on the dashboard', 'dashboard-pause': 'paused on the dashboard', status: 'status change' };
 export const eventLabel = (kind) => EVENT_WORDS[kind] ?? kind.replace(/-/g, ' ');
+
+// Where a claude -p chain is: "backend (2 of 3)"; null for subagents and finished chains.
+export function runStep(item, runs) {
+  if (!item.agent_id?.startsWith('run:')) return null;
+  const chain = (runs ?? []).find((c) => c.id === item.agent_id.slice(4) && c.loop === item.loop);
+  const at = chain?.steps.findIndex((s) => s.status === 'running') ?? -1;
+  if (at < 0) return null;
+  return { repo: chain.steps[at].repo, label: `${chain.steps[at].repo} (${at + 1} of ${chain.steps.length})`, since: chain.steps[at].startedAt };
+}
 
 // What a running agent is doing, from the item it works on ("Fixing pipeline on web !81").
 const STATUS_VERB = { fixing: 'Fixing', rebasing: 'Rebasing', developing: 'Developing', reviewing: 'Handling review on' };

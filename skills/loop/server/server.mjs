@@ -8,6 +8,7 @@ import { parseArgs } from 'node:util';
 import * as S from '../lib/db.mjs';
 import { DEFAULTS, loopSettings } from '../lib/config.mjs';
 import { homeDir, homeSettings, listLoops, loopStatus } from '../lib/home.mjs';
+import { listChains } from '../lib/runs.mjs';
 import { resolveRange } from '../lib/range.mjs';
 import { createPush } from './push.mjs';
 
@@ -37,7 +38,8 @@ const broadcast = (type, data) => {
 
 // Quick actions a dashboard viewer may ask the loop for. The loop picks them up on its next tick
 // (`state.mjs tick` → fromDashboard); the server itself never touches the code host or tracker.
-const REQUESTS = ['rebase', 'fix-pipeline', 'fix-review', 'merge', 'retry', 'elaborate'];
+// `stop` ends a claude -p chain: the loop kills it (`state.mjs run-stop`), never this server.
+const REQUESTS = ['rebase', 'fix-pipeline', 'fix-review', 'merge', 'retry', 'elaborate', 'stop'];
 
 // ---- loops: the registry entries, each with its store opened on first use.
 // A loop whose store is missing or unreadable carries `error` and is skipped, never fatal.
@@ -138,6 +140,10 @@ function stateOf(l) {
     reviews: items.filter(openReview),
     failed: items.filter((i) => i.failed).map(withHint),
     questions: S.listQuestions(db, { status: 'open' }).map((q) => ({ ...q, item: ref(byId.get(q.item_id)) })),
+    // claude -p chains (runner: claude-p) that run now or ended today; process details stay local.
+    runs: listChains(l.dir)
+      .filter((c) => c.status === 'running' || (c.endedAt ?? '') >= startOfToday())
+      .map((c) => ({ id: c.id, item: c.item, kind: c.kind, status: c.status, startedAt: c.startedAt, endedAt: c.endedAt, steps: c.steps.map(({ repo, status, startedAt, endedAt }) => ({ repo, status, startedAt: startedAt ?? null, endedAt: endedAt ?? null })) })),
     finishedToday: S.listEvents(db, { from: startOfToday() })
       .filter((e) => e.kind === 'worker')
       .map((e) => ({ id: e.id, ts: e.ts, message: e.message, status: e.data?.status ?? null, commits: e.data?.commits ?? [], item: ref(byId.get(e.item_id)) })),
