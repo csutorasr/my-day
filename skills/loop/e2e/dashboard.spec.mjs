@@ -71,7 +71,7 @@ test('the loop view opens over the inbox and is captured for the README', async 
   await expect(board.getByText('Agent a1b2c3d4 working')).toBeVisible();
   await expect(board.getByText('Needs a rebase')).toBeVisible();
   await expect(board.getByText('Ready for the merge step')).toHaveCount(2);
-  await expect(loop.locator('#agents').getByText('1 of 3 slots busy')).toBeVisible();
+  await expect(loop.locator('#agents').getByText('2 of 3 slots busy')).toBeVisible();
 
   await page.screenshot({ path: SCREENSHOT_LOOP });
 });
@@ -272,6 +272,17 @@ test('keyboard: j moves through the inbox, a approves, u undoes, ? lists the sho
   await expect(page.locator('#needs').getByRole('button', { name: 'Approve' })).toBeVisible();
   await page.keyboard.press('?');
   await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
+});
+
+test('a claude -p run shows its repo in the chain, and Stop run waits in the outbox', async ({ page }) => {
+  await page.goto(`${url}/#loop`);
+  const run = page.locator('#agents [data-agent="bug-1"]');
+  await expect(run).toContainText('backend (2 of 2)');
+  await expect(run).toContainText('claude -p since');
+  await run.getByRole('button', { name: /^Stop run/ }).click();
+  await expect(run.getByRole('button', { name: 'Undo stop run' })).toBeVisible();
+  await run.getByRole('button', { name: 'Undo stop run' }).click();
+  await expect(run.getByRole('button', { name: /^Stop run/ })).toBeVisible();
 });
 
 test('activity names events in words and agents lead with their task', async ({ page }) => {
