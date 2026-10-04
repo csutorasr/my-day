@@ -4,20 +4,30 @@ import { getJson, post } from './api.js';
 const Ctx = createContext(null);
 export const useDashboard = () => useContext(Ctx);
 
+// How long a dashboard action waits before it is sent. The loop acts within seconds of receiving
+// it (watch-dashboard), so this window is the only moment an action can still be taken back.
+export const UNDO_MS = 8000;
+const TOAST_MS = 4000;
+
 // Loads /api/state, re-loads on every SSE `change`, retries every 5s while the server is away,
-// and offers `act` (POST + toast + reload) and `toast` to every component.
+// and offers to every component:
+// - `queue`: an outbox action (approve, decline, review, request) sent after UNDO_MS unless undone;
+// - `act`: an immediate POST (pause / resume) with a toast and reload;
+// - `toast`: a short confirmation.
 export function DashboardProvider({ children }) {
   const [state, setState] = useState(null);
   const [offline, setOffline] = useState(false);
   const [live, setLive] = useState(false);
   const [toastText, setToastText] = useState(null);
+  const [outbox, setOutbox] = useState([]);
+  const pending = useRef(new Map());
   const toastTimer = useRef();
   const retryTimer = useRef();
 
   const toast = useCallback((text) => {
     setToastText(text);
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToastText(null), 1800);
+    toastTimer.current = setTimeout(() => setToastText(null), TOAST_MS);
   }, []);
 
   const load = useCallback(async () => {
@@ -32,7 +42,7 @@ export function DashboardProvider({ children }) {
     }
   }, []);
 
-  // POST an action; on success show `ok` and reload, on failure show the server's error.
+  // POST right away; on success show `ok` and reload, on failure show the server's error.
   const act = useCallback(
     async (path, payload, ok) => {
       try {
@@ -45,6 +55,51 @@ export function DashboardProvider({ children }) {
     },
     [load, toast],
   );
+
+  const drop = useCallback((key) => {
+    const entry = pending.current.get(key);
+    if (!entry) return null;
+    clearTimeout(entry.timer);
+    pending.current.delete(key);
+    setOutbox((o) => o.filter((x) => x.key !== key));
+    return entry;
+  }, []);
+
+  // Outbox: `label` describes the queued action ("Approve q-3"), `ok` is shown once it is sent.
+  const queue = useCallback(
+    ({ key, label, path, payload, ok }) => {
+      drop(key);
+      const entry = { key, label, path, payload, ok, until: Date.now() + UNDO_MS };
+      entry.timer = setTimeout(() => {
+        if (drop(key)) act(path, payload, ok);
+      }, UNDO_MS);
+      pending.current.set(key, entry);
+      setOutbox((o) => [...o, { key, label, until: entry.until }]);
+    },
+    [act, drop],
+  );
+
+  const undo = useCallback(
+    (key) => {
+      const entry = drop(key);
+      if (entry) toast(`${entry.label}: undone, nothing was sent.`);
+    },
+    [drop, toast],
+  );
+
+  const isQueued = useCallback((key) => outbox.some((x) => x.key === key), [outbox]);
+
+  // Closing the tab must not lose an action the user already chose: send what is still queued.
+  useEffect(() => {
+    const flush = () => {
+      for (const e of pending.current.values()) {
+        navigator.sendBeacon(e.path, new Blob([JSON.stringify(e.payload ?? {})], { type: 'application/json' }));
+      }
+      pending.current.clear();
+    };
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, []);
 
   useEffect(() => {
     load();
@@ -60,7 +115,11 @@ export function DashboardProvider({ children }) {
     return () => { es.close(); clearTimeout(retryTimer.current); };
   }, [load]);
 
-  return <Ctx.Provider value={{ state, offline, live, load, act, toast, toastText }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={{ state, offline, live, load, act, queue, undo, isQueued, outbox, toast, toastText }}>
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 async function hasPush() {
