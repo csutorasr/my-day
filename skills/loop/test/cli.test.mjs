@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'state.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'myday-cli-'));
+const home = mkdtempSync(join(tmpdir(), 'myday-cli-home-'));
+process.env.MY_DAY_HOME = home; // every spawned CLI inherits it; never touch the real ~/.my-day
 const run = (...a) => execFileSync(process.execPath, [CLI, ...a], { env: { ...process.env, MY_DAY_DIR: dir }, encoding: 'utf8' }).trim();
 
 test('upsert → set → fail → show → summary round trip', () => {
@@ -132,4 +134,22 @@ test('watch-dashboard streams only dashboard events after the tick cursor', () =
   const lines = run('watch-dashboard', '--once').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   assert.deepEqual(lines.map((l) => l.kind), ['dashboard-request']);
   assert.equal(lines[0].item, 'bug-1');
+});
+
+test('loops register lists the workspace; stop marks it stopped; a new session runs again', async () => {
+  const d = join(mkdtempSync(join(tmpdir(), 'myday-cli-')), 'client-a', '.my-day');
+  const r = (...a) => execFileSync(process.execPath, [CLI, ...a], { env: { ...process.env, MY_DAY_DIR: d, GLAB_BIN: '/usr/bin/false' }, encoding: 'utf8' }).trim();
+  const reg = JSON.parse(r('loops', 'register', '--json'));
+  assert.equal(reg.name, 'client-a');
+  const mine = () => JSON.parse(r('loops', '--json')).find((l) => l.id === reg.id);
+  assert.deepEqual([mine().running, mine().stopped], [false, false]);
+  r('tick');
+  assert.equal(mine().running, true);
+  assert.match(r('stop'), /stopped/);
+  assert.deepEqual([mine().running, mine().stopped], [false, true]);
+  assert.match(r('loops'), /client-a\s+stopped/);
+  r('tick'); // "start my day" again in the same session: no new --new-session bootstrap
+  assert.deepEqual([mine().running, mine().stopped], [true, false]);
+  assert.equal(JSON.parse(r('loops', 'forget', reg.id, '--json')).forgotten, true);
+  assert.equal(mine(), undefined);
 });
