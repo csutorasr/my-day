@@ -9,7 +9,9 @@ Everything is configured per workspace in plain markdown (`.my-day/*.md`), so th
 skills work with Jira, GitHub Issues, GitLab Issues, Linear or no tracker at all, on GitLab
 or GitHub.
 
-![The my-day dashboard: needs-you questions, the MR board, reviews, agents and activity](docs/dashboard.png)
+![The my-day dashboard inbox: decisions, failures and reviews that need you, under a health strip](docs/dashboard.png)
+
+![The loop view: the MR board, tickets, agents and activity, opened over the inbox](docs/dashboard-loop.png)
 
 ## How it helps
 
@@ -140,11 +142,14 @@ Add to `.gitignore`:
   `stop`.
 - The dashboard puts everything that needs you in one inbox: decisions (answer, approve or
   decline right there, with the MR's title and gates beside the question), failures and review
-  requests (Done / Skip). Below it: your MRs grouped by what they wait for, agents, tickets and the
-  activity log; it also sends web push notifications. Every dashboard action waits a few seconds
+  requests (Done / Skip), under a health strip (live, next check, MRs blocked on you, agents
+  busy); the tab title shows the count. The Loop button (or `l`) opens the loop view over it: your
+  MRs grouped by what they wait for, tickets, agents and the activity log (`#loop` survives a
+  reload; Esc goes back, and "Waiting for you" on an MR card jumps to that question). It also
+  sends web push notifications. Every dashboard action waits a few seconds
   with Undo before it reaches the loop. Keyboard: `j`/`k` move through the inbox, `a` approves or
-  sends, `d` declines, `u` undoes, `c` copies a link, `?` lists them. On a phone, approvals and the
-  merge / rebase actions are not offered: decide those on a larger screen. Every MR / ticket / link has quick actions: copy, open, and a loop
+  sends, `d` declines, `u` undoes, `c` copies a link, `?` lists them. On a phone the dashboard is the inbox
+  only, and approvals are not offered: decide those on a larger screen. Every MR / ticket / link has quick actions: copy, open, and a loop
   action (rebase, fix pipeline, fix review, merge step, retry, ask why). Pause / resume the loop
   from the header.
 - Dashboard clicks reach the loop on its next `tick` (`fromDashboard`); the loop also runs
@@ -195,7 +200,8 @@ npm run test:e2e     # build, seed the imaginary workspace, drive the dashboard 
 ```
 
 `npm test` fails when the committed build is older than the UI sources. `npm run test:e2e`
-also rewrites the screenshot at the top of this README (`docs/dashboard.png`); commit it after a
+also rewrites the screenshots at the top of this README (`docs/dashboard.png`,
+`docs/dashboard-loop.png`); commit it after a
 visible UI change, see [AGENTS.md](AGENTS.md).
 
 Status: early. Used daily on a Jira + GitLab workspace; the GitHub provider is covered by

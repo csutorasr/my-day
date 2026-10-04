@@ -1,5 +1,5 @@
 // End to end: an imaginary workspace (seed.mjs) → the real dashboard server → the built UI in a
-// browser. Also writes the README screenshot (docs/dashboard.png).
+// browser. Also writes the README screenshots (docs/dashboard.png, docs/dashboard-loop.png).
 import { test, expect } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
@@ -11,6 +11,7 @@ import * as ctl from '../lib/serverctl.mjs';
 import { seedDemo } from './seed.mjs';
 
 const SCREENSHOT = fileURLToPath(new URL('../../../docs/dashboard.png', import.meta.url));
+const SCREENSHOT_LOOP = fileURLToPath(new URL('../../../docs/dashboard-loop.png', import.meta.url));
 const freePort = () => new Promise((ok) => { const s = createServer().listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => ok(port)); }); });
 
 let dir;
@@ -23,13 +24,14 @@ test.beforeAll(async () => {
 
 test.afterAll(() => ctl.stop(dir));
 
-test('the dashboard shows the imaginary workspace and is captured for the README', async ({ page }) => {
+test('the inbox is the first screen and is captured for the README', async ({ page }) => {
   await page.goto(url);
 
-  // One status line instead of KPI tiles.
+  // A health strip instead of KPI tiles; the inbox count is in the tab title.
   const overview = page.getByRole('navigation', { name: 'Overview' });
-  await expect(overview.getByRole('link', { name: '5 things need you' })).toBeVisible();
+  await expect(overview).toContainText('Live');
   await expect(overview.getByRole('link', { name: '5 merge requests, 1 blocked on you' })).toBeVisible();
+  await expect(page).toHaveTitle('(5) my-day');
 
   // Needs you is one inbox: decisions (with the MR they are about), failures and reviews.
   const needs = page.locator('#needs');
@@ -39,19 +41,68 @@ test('the dashboard shows the imaginary workspace and is captured for the README
   await expect(needs.getByText('Pipeline still red after 3 attempts: flaky checkout test')).toBeVisible();
   await expect(needs.getByRole('button', { name: /Mark .* reviewed/ })).toHaveCount(2);
 
+  // The loop detail waits behind the Loop button.
+  await expect(page.locator('#mrs')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Loop · 1 blocked on you' })).toBeVisible();
+
+  await page.screenshot({ path: SCREENSHOT, fullPage: true });
+});
+
+test('the loop view opens over the inbox and is captured for the README', async ({ page }) => {
+  await page.goto(url);
+  await page.getByRole('button', { name: 'Loop · 1 blocked on you' }).click();
+  const loop = page.getByRole('dialog', { name: 'Loop' });
+  await expect(loop).toBeVisible();
+  await expect(page).toHaveURL(/#loop$/);
+
   // MR board: one card per lane.
-  const board = page.locator('#mrs');
+  const board = loop.locator('#mrs');
   await expect(board.locator('.lane')).toHaveCount(4);
   await expect(board.getByText('Blocked on you')).toBeVisible();
-  await expect(board.getByText('Waiting for you · q-1')).toBeVisible();
+  await expect(board.getByRole('button', { name: /Waiting for you · q-1/ })).toBeVisible();
   await expect(board.getByText('Agent a1b2c3d4 working')).toBeVisible();
   await expect(board.getByText('Needs a rebase')).toBeVisible();
   await expect(board.getByText('Ready for the merge step')).toHaveCount(2);
+  await expect(loop.locator('#agents').getByText('1 of 3 slots busy')).toBeVisible();
 
-  await expect(page.locator('#agents').getByText('1 of 3 slots busy')).toBeVisible();
-  await expect(page.getByText('api-spec!25 needs your review')).toBeVisible();
+  await page.screenshot({ path: SCREENSHOT_LOOP });
+});
 
-  await page.screenshot({ path: SCREENSHOT, fullPage: true });
+test('the loop view: l and Esc toggle it, focus returns, #loop survives a reload, Back closes it', async ({ page }) => {
+  await page.goto(url);
+  await page.locator('#needs [data-inbox-item]').first().waitFor();
+  const loop = page.getByRole('dialog', { name: 'Loop' });
+
+  await page.keyboard.press('j');
+  await expect(page.locator(':focus')).toHaveText('backend !112');
+  await page.keyboard.press('l');
+  await expect(loop).toBeVisible();
+  // Inbox keys pause while the loop view covers the inbox.
+  await page.keyboard.press('a');
+  await expect(page.locator('#needs').getByText('Approval queued.')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(loop).toHaveCount(0);
+  await expect(page.locator(':focus')).toHaveText('backend !112');
+
+  await page.keyboard.press('l');
+  await page.reload();
+  await expect(loop).toBeVisible();
+  await page.getByRole('button', { name: 'Back to inbox' }).click();
+  await expect(loop).toHaveCount(0);
+  await expect(page).not.toHaveURL(/#loop/);
+
+  await page.getByRole('link', { name: '5 merge requests, 1 blocked on you' }).click();
+  await expect(loop).toBeVisible();
+  await page.goBack();
+  await expect(loop).toHaveCount(0);
+});
+
+test('waiting for you on an MR card leads to that question in the inbox', async ({ page }) => {
+  await page.goto(`${url}/#loop`);
+  await page.getByRole('dialog', { name: 'Loop' }).getByRole('button', { name: /Waiting for you · q-1/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Loop' })).toHaveCount(0);
+  await expect(page.locator(':focus')).toHaveText('backend !112');
+  await expect(page.locator(':focus').locator('xpath=ancestor::*[@data-inbox-item][1]')).toHaveAttribute('data-inbox-item', 'q-1');
 });
 
 test('an approval waits in the outbox and Undo sends nothing', async ({ page }) => {
@@ -61,7 +112,10 @@ test('an approval waits in the outbox and Undo sends nothing', async ({ page }) 
   await needs.getByRole('button', { name: 'Approve' }).click();
   await expect(needs.getByText('Approval queued.')).toBeVisible();
   await expect(page.locator('.toasts')).toContainText('Approve q-1 in 8s');
+  // Focus moved on to the next inbox item (an answer field), so open the loop view with the button.
+  await page.getByRole('button', { name: /^Loop/ }).click();
   await expect(page.locator('#mrs')).toContainText('Your answer to q-1 is being sent');
+  // The undo toast stays above the loop view.
   await page.locator('.toasts').getByRole('button', { name: 'Undo' }).click();
   await expect(needs.getByRole('button', { name: 'Approve' })).toBeVisible();
   await page.clock.runFor(10_000);
@@ -103,10 +157,12 @@ test('on a phone, risky approvals and merge / rebase actions are not offered', a
   await expect(needs.getByText('Approve from a larger screen. You can decline here.')).toBeVisible();
   await expect(needs.getByRole('button', { name: 'Approve' })).toHaveCount(0);
   await expect(needs.locator('[data-inbox-item="q-1"]').getByRole('button', { name: 'Decline' })).toBeVisible();
-  const board = page.locator('#mrs');
-  await expect(board.getByRole('button', { name: /^Merge / })).toHaveCount(0);
-  await expect(board.getByRole('button', { name: /^Rebase / })).toHaveCount(0);
-  await expect(board.getByRole('button', { name: /^Fix review / })).toBeVisible();
+  // Phones get the inbox only: no loop view, even from a #loop link.
+  await expect(page.getByRole('button', { name: /^Loop/ })).toHaveCount(0);
+  await page.goto(`${url}/#loop`);
+  await expect(needs.locator('[data-inbox-item]').first()).toBeVisible();
+  await expect(page.locator('#mrs')).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Overview' }).getByRole('link')).toHaveCount(0);
 });
 
 test('keyboard: j moves through the inbox, a approves, u undoes, ? lists the shortcuts', async ({ page }) => {
@@ -125,7 +181,7 @@ test('keyboard: j moves through the inbox, a approves, u undoes, ? lists the sho
 });
 
 test('activity names events in words and agents lead with their task', async ({ page }) => {
-  await page.goto(url);
+  await page.goto(`${url}/#loop`);
   await expect(page.getByText('agent started').first()).toBeVisible();
   await expect(page.locator('#agents').getByText('Fixing pipeline on web !81')).toBeVisible();
 });
@@ -136,6 +192,6 @@ test('when the server goes away the page says how old its data is', async ({ pag
   await page.locator('#needs .ask').first().waitFor();
   await ctl.stop(dir);
   await expect(page.getByRole('alert')).toContainText('lost its connection to the loop', { timeout: 15_000 });
-  await expect(page.locator('header')).toContainText('Data from');
+  await expect(page.getByRole('navigation', { name: 'Overview' })).toContainText('Offline · data from');
 });
 

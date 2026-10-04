@@ -1,5 +1,7 @@
+import { useEffect, useRef } from 'react';
 import { useDashboard, useNotifications, useTheme } from '../dashboard.jsx';
-import { hhmm, nextCheck } from '../format.js';
+import { useLoopView } from '../loop.jsx';
+import { mrLanes } from './MrBoard.jsx';
 import { ScreenIcon } from './Icons.jsx';
 
 function ThemeSwitch() {
@@ -21,10 +23,17 @@ function ThemeSwitch() {
 const NOTIFY_LABEL = { default: 'Enable notifications', granted: 'Notifications on', denied: 'Notifications blocked' };
 
 export function Header({ onShortcuts }) {
-  const { state: s, live, offline, updatedAt, act, toast } = useDashboard();
+  const { state: s, live, act, toast } = useDashboard();
   const notifications = useNotifications();
-  // While the server is away, the schedule is unknown: show when the data was last fresh instead.
-  const when = offline ? (updatedAt ? `Data from ${hhmm(updatedAt)}` : '') : s ? nextCheck(s.loop) : '';
+  const loop = useLoopView();
+  // The loop view sits right below the header; the header wraps on narrow windows, so measure it.
+  const bar = useRef(null);
+  useEffect(() => {
+    const ro = new ResizeObserver(([e]) => document.documentElement.style.setProperty('--header-h', `${Math.ceil(e.borderBoxSize?.[0]?.blockSize ?? e.target.offsetHeight)}px`));
+    ro.observe(bar.current);
+    return () => ro.disconnect();
+  }, []);
+  const blocked = s ? mrLanes(s).lanes.you.items.length : 0;
 
   const enable = async () => {
     if (notifications.permission === 'denied') {
@@ -35,7 +44,7 @@ export function Header({ onShortcuts }) {
   };
 
   return (
-    <header>
+    <header ref={bar}>
       <div className="bar">
         <div className="brand">
           <span className={`live${live ? ' on' : ''}`} aria-hidden="true" />
@@ -47,9 +56,13 @@ export function Header({ onShortcuts }) {
           <span className={`chip ${s?.dryRun ? 'warn' : 'accent'}`}>{s?.dryRun ? 'Dry run' : 'Live'}</span>
           {s?.loop.paused && <span className="chip warn">Paused</span>}
           {s && <span className="chip" id="hours">Working hours {s.loop.workingHours}</span>}
-          {when && <span className={`chip${offline ? ' warn' : ''}`}>{when}</span>}
         </div>
         <span className="grow" />
+        {loop.available && (
+          <button className={`btn loop-btn${loop.open ? ' on' : ''}`} type="button" onClick={loop.toggle} aria-expanded={loop.open} aria-keyshortcuts="l">
+            Loop{blocked ? <> · <b>{blocked} blocked on you</b></> : ''}
+          </button>
+        )}
         <ThemeSwitch />
         <button className="btn" type="button" onClick={() => act(`/api/loop/${s?.loop.paused ? 'resume' : 'pause'}`, null, s?.loop.paused ? 'Loop resumed.' : 'Loop paused. Nothing new is started until you resume.')}>
           {s?.loop.paused ? 'Resume loop' : 'Pause loop'}

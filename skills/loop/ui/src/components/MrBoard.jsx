@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useDashboard } from '../dashboard.jsx';
+import { useLoopView } from '../loop.jsx';
 import { NEXT, humanFailing, latestLinks, pendingAnswers, plural } from '../format.js';
 import { Gates } from './Gates.jsx';
 import { Actions, Ref } from './Ref.jsx';
@@ -28,6 +29,7 @@ export function mrLanes(s) {
 
 function MrCard({ m }) {
   const { state: s, isQueued } = useDashboard();
+  const loop = useLoopView();
   const q = s.questions.find((x) => x.item_id === m.id);
   const answered = pendingAnswers(s).get(m.id);
   const ticket = m.data?.ticketKeys?.[0];
@@ -56,7 +58,12 @@ function MrCard({ m }) {
         </div>
       )}
       <div className={`next${q ? ' warn' : answered ? ' ok' : ''}`}>
-        <span>{nextText}</span>
+        {q && !isQueued(`q:${q.id}`) && loop?.open ? (
+          // Answering happens in the inbox: close the loop view and put focus on that question.
+          <button type="button" className="jump" onClick={() => loop.hide(`[data-inbox-item="${q.id}"] :is(a[href], button, input):not([tabindex="-1"])`)}>
+            {nextText}<span className="sr-only">, answer it in the inbox</span>
+          </button>
+        ) : <span>{nextText}</span>}
         <span className="card-acts"><Actions item={m} /></span>
       </div>
     </li>
