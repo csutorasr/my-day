@@ -1,4 +1,9 @@
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
+import { toneDot } from '@/lib/tone';
 import { useDashboard } from '../dashboard.jsx';
 import { useLoopView } from '../loop.jsx';
 import { NEXT, humanFailing, latestLinks, pendingAnswers, plural } from '../format.js';
@@ -45,27 +50,29 @@ function MrCard({ m }) {
       ? `Agent ${m.agent_id} working`
       : NEXT[m.data?.verdict] ?? (humanFailing(m.data?.failing ?? []) || 'Waiting');
   return (
-    <li className="card">
-      <div className="top">
-        <Ref item={m} actions={[]} />
-        {ticket && <span className="mono muted tiny">{ticket}</span>}
-      </div>
-      <div className="t">{m.title}</div>
-      <Gates mr={m} target={s.loop.targetBranch} />
-      {links.length > 0 && (
-        <div className="links">
-          {links.map((l) => <Ref key={l.kind} item={m} text={l.label ?? l.kind} url={l.url} actions={[]} />)}
+    <li>
+      <Card size="sm" className="gap-2 py-3">
+        <div className="flex items-center justify-between gap-2 px-3">
+          <Ref item={m} actions={[]} />
+          {ticket && <span className="font-mono text-xs text-muted-foreground">{ticket}</span>}
         </div>
-      )}
-      <div className={`next${q ? ' warn' : answered ? ' ok' : ''}`}>
-        {q && !isQueued(`q:${q.id}`) && loop?.open ? (
-          // Answering happens in the inbox: close the loop view and put focus on that question.
-          <button type="button" className="jump" onClick={() => loop.hide(`[data-inbox-item="${q.id}"] :is(a[href], button, input):not([tabindex="-1"])`)}>
-            {nextText}<span className="sr-only">, answer it in the inbox</span>
-          </button>
-        ) : <span>{nextText}</span>}
-        <span className="card-acts"><Actions item={m} /></span>
-      </div>
+        <div className="px-3 text-sm font-medium">{m.title}</div>
+        <div className="px-3"><Gates mr={m} target={s.loop.targetBranch} /></div>
+        {links.length > 0 && (
+          <div className="flex flex-wrap gap-x-3 px-3">
+            {links.map((l) => <Ref key={l.kind} item={m} text={l.label ?? l.kind} url={l.url} actions={[]} />)}
+          </div>
+        )}
+        <div className={cn('mx-3 flex items-center justify-between gap-2 border-t pt-2.5 text-xs', q ? 'text-warning' : answered ? 'text-success' : 'text-muted-foreground')}>
+          {q && !isQueued(`q:${q.id}`) && loop?.open ? (
+            // Answering happens in the inbox: close the loop view and put focus on that question.
+            <button type="button" className="text-left font-medium underline underline-offset-3 hover:text-foreground" onClick={() => loop.hide(`[data-inbox-item="${q.id}"] :is(a[href], button, input):not([tabindex="-1"])`)}>
+              {nextText}<span className="sr-only">, answer it in the inbox</span>
+            </button>
+          ) : <span>{nextText}</span>}
+          <span className="flex flex-wrap justify-end gap-1"><Actions item={m} /></span>
+        </div>
+      </Card>
     </li>
   );
 }
@@ -76,19 +83,21 @@ function Lane({ l }) {
   const [all, setAll] = useState(false);
   const shown = all ? l.items : l.items.slice(0, LANE_CAP);
   return (
-    <div className="lane">
-      <h3 className="title" id={`lane-${l.key}`}><span className={`dot ${l.dot}`} aria-hidden="true" />{l.title} <span className="n">{l.items.length}</span></h3>
+    <div data-lane className="flex min-w-0 flex-col gap-2 bg-muted/60 p-2">
+      <h3 className="flex items-center gap-2 px-1 pt-1 font-heading text-xs font-semibold" id={`lane-${l.key}`}>
+        <span className={cn('size-2 rounded-full', toneDot[l.dot])} aria-hidden="true" />{l.title} <span className="font-sans font-normal text-muted-foreground tabular-nums">{l.items.length}</span>
+      </h3>
       {l.items.length ? (
-        <ul className="cards" aria-labelledby={`lane-${l.key}`}>
+        <ul className="flex flex-col gap-2" aria-labelledby={`lane-${l.key}`}>
           {shown.map((m) => <MrCard key={m.id} m={m} />)}
         </ul>
       ) : (
-        <div className="none">{l.none}</div>
+        <div className="px-1 pb-1 text-xs text-muted-foreground">{l.none}</div>
       )}
       {l.items.length > LANE_CAP && (
-        <button type="button" className="btn small ghost more" onClick={() => setAll(!all)}>
+        <Button size="sm" variant="ghost" onClick={() => setAll(!all)}>
           {all ? 'Show fewer' : `Show ${plural(l.items.length - LANE_CAP, 'more merge request')}`}
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -98,15 +107,15 @@ export function MrBoard() {
   const { state: s } = useDashboard();
   const board = s ? mrLanes(s) : null;
   return (
-    <section className="section" id="mrs" aria-labelledby="h-mrs">
-      <div className="section-head">
-        <h2 id="h-mrs">My merge requests</h2>
-        <span className="muted small">{board ? `${board.total} open · grouped by what they wait for` : ''}</span>
+    <section className="@container flex flex-col gap-3" id="mrs" aria-labelledby="h-mrs">
+      <div className="flex flex-wrap items-baseline gap-x-3">
+        <h2 id="h-mrs" className="font-heading text-sm font-semibold">My merge requests</h2>
+        <span className="text-xs text-muted-foreground">{board ? `${board.total} open · grouped by what they wait for` : ''}</span>
       </div>
-      <div className="board">
+      <div className="grid grid-cols-1 items-start gap-3 @[460px]:grid-cols-2 @[1000px]:grid-cols-4">
         {board
           ? LANES.map(({ key }) => <Lane key={key} l={board.lanes[key]} />)
-          : [0, 1].map((k) => <div className="lane" key={k}><span className="skel card-skel" /></div>)}
+          : [0, 1].map((k) => <Skeleton key={k} className="h-40" />)}
       </div>
     </section>
   );

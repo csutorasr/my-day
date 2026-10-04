@@ -7,7 +7,7 @@ import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const UI_DIR = fileURLToPath(new URL('.', import.meta.url));
-const INPUTS = ['index.html', 'vite.config.js', 'src', 'public'];
+const INPUTS = ['index.html', 'vite.config.js', 'package.json', 'jsconfig.json', 'components.json', 'src', 'public'];
 
 function files(path) {
   if (!statSync(path).isDirectory()) return [path];

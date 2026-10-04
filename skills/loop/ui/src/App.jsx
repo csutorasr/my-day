@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DashboardProvider, useDashboard } from './dashboard.jsx';
 import { LoopPanel, LoopViewProvider, useLoopView } from './loop.jsx';
 import { Header } from './components/Header.jsx';
@@ -17,23 +17,23 @@ function useTitleCount() {
 
 function Dashboard() {
   const { open } = useLoopView();
-  const help = useRef(null);
-  const openHelp = useCallback(() => help.current?.showModal(), []);
+  const [help, setHelp] = useState(false);
+  const openHelp = useCallback(() => setHelp(true), []);
   useShortcuts(openHelp);
   useTitleCount();
 
   return (
     <>
-      <a className="skip" href="#main">Skip to content</a>
+      <a className="fixed -top-12 left-4 z-40 bg-primary px-3 py-2 text-sm text-primary-foreground focus:top-3" href="#main">Skip to content</a>
       <Header onShortcuts={openHelp} />
-      <main id="main" className="inbox-page" inert={open}>
+      <main id="main" className="mx-auto flex max-w-[880px] flex-col gap-6 p-6 max-sm:px-4" inert={open}>
         <OfflineNotice />
         <StatusLine />
         <NeedsYou />
       </main>
       <LoopPanel />
       <Toasts />
-      <ShortcutsDialog dialogRef={help} />
+      <ShortcutsDialog open={help} onOpenChange={setHelp} />
     </>
   );
 }

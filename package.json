@@ -14,10 +14,9 @@
     "ui:build": "vite build --config skills/loop/ui/vite.config.js"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
-    "@vitejs/plugin-react": "^6.1.1",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "vite": "^8.3.2"
-  }
+    "@playwright/test": "^1.63.0"
+  },
+  "workspaces": [
+    "skills/loop/ui"
+  ]
 }

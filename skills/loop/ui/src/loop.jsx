@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useDashboard, useIsPhone } from './dashboard.jsx';
 import { Activity } from './components/Activity.jsx';
@@ -97,19 +98,19 @@ export function LoopPanel() {
   };
 
   return (
-    <section ref={panel} className="loop-panel" role="dialog" aria-modal="true" aria-labelledby="h-loop" onKeyDown={onKeyDown}>
-      <div className="loop-bar">
-        <h2 id="h-loop" tabIndex={-1}>Loop</h2>
-        <span className="muted small">What the loop is doing{s && !offline ? ` · ${nextCheck(s.loop) || 'no check scheduled'}` : ''}</span>
+    <section ref={panel} className="fixed inset-x-0 bottom-0 top-(--header-h,61px) z-20 overflow-y-auto overscroll-contain bg-background animate-[rise_.18s_ease-out]" role="dialog" aria-modal="true" aria-labelledby="h-loop" onKeyDown={onKeyDown}>
+      <div className="mx-auto flex max-w-[1320px] flex-wrap items-baseline gap-3 px-6 pt-5">
+        <h2 id="h-loop" tabIndex={-1} className="font-heading text-lg font-semibold outline-none">Loop</h2>
+        <span className="text-xs text-muted-foreground">What the loop is doing{s && !offline ? ` · ${nextCheck(s.loop) || 'no check scheduled'}` : ''}</span>
         <span className="grow" />
-        <button type="button" className="btn" onClick={() => hide()} aria-keyshortcuts="Escape l">Back to inbox</button>
+        <Button variant="outline" onClick={() => hide()} aria-keyshortcuts="Escape l">Back to inbox</Button>
       </div>
-      <div className="loop-body">
+      <div className="mx-auto flex max-w-[1320px] flex-col gap-6 px-6 pt-4 pb-24">
         <OfflineNotice />
         <MrBoard />
-        <div className="loop-grid">
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
           <Tickets />
-          <div className="stack">
+          <div className="flex min-w-0 flex-col gap-6">
             <Agents />
             <Activity />
           </div>

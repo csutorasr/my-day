@@ -187,17 +187,22 @@ orchestrator writes all task state; workers only report a JSON result.
 npm test     # node --test, no dependencies needed
 ```
 
-The dashboard UI is a React app built with Vite (`skills/loop/ui`). The build output in
-`skills/loop/server/public` is committed, so an installed plugin never builds anything.
+The dashboard UI is a React app built with Vite, Tailwind CSS v4 and
+[shadcn/ui](https://ui.shadcn.com) components on Base UI (`skills/loop/ui`, an npm workspace; theme
+from the shadcn preset `b5r7j0sfMW`). The build output in `skills/loop/server/public` is committed,
+so an installed plugin never builds anything.
 
 ```bash
-npm install          # Vite, React and Playwright, development only
+npm install          # Vite, React, Tailwind, shadcn and Playwright, development only
 npm run ui:dev       # hot reload against the running dashboard (MY_DAY_URL, default :4711)
 npm run ui:demo      # the real server on an imaginary workspace (skills/loop/e2e/seed.mjs), port 4712
 npm run ui:dev:demo  # hot reload against `ui:demo`
 npm run ui:build     # rebuild skills/loop/server/public; commit the result
 npm run test:e2e     # build, seed the imaginary workspace, drive the dashboard in Chrome
 ```
+
+Add a shadcn component from `skills/loop/ui`: `pnpm dlx shadcn@latest add <name>` (it lands in
+`src/components/ui`; dependencies go to the workspace's `package.json`).
 
 `npm test` fails when the committed build is older than the UI sources. `npm run test:e2e`
 also rewrites the screenshots at the top of this README (`docs/dashboard.png`,

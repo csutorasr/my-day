@@ -168,8 +168,22 @@ export function useIsPhone() {
 }
 
 // Theme: system (default) / light / dark, remembered per browser. index.html applies it before paint.
+// Light / dark / system. The choice lives in data-theme and localStorage; the resolved theme is the
+// .dark class shadcn's tokens key off, kept in step with the system setting while on "system".
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+function applyTheme(choice) {
+  document.documentElement.classList.toggle('dark', choice === 'dark' || (choice === 'system' && darkQuery.matches));
+}
+
 export function useTheme() {
   const [choice, setChoice] = useState(() => document.documentElement.dataset.theme ?? 'system');
+  useEffect(() => {
+    applyTheme(choice);
+    if (choice !== 'system') return undefined;
+    const on = () => applyTheme('system');
+    darkQuery.addEventListener('change', on);
+    return () => darkQuery.removeEventListener('change', on);
+  }, [choice]);
   const set = useCallback((c) => {
     if (c === 'light' || c === 'dark') document.documentElement.dataset.theme = c;
     else delete document.documentElement.dataset.theme;

@@ -3,6 +3,7 @@
 // writes the committed bundle the dashboard server serves (server/public).
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { sourceHash } from './source-hash.mjs';
@@ -25,7 +26,8 @@ const stampBuild = () => ({
 
 export default defineConfig({
   root,
-  plugins: [react(), stampBuild()],
+  plugins: [react(), tailwindcss(), stampBuild()],
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   build: { outDir, emptyOutDir: true },
   server: { port: 5173, proxy: { '/api': proxyTo, '/health': proxyTo } },
 });
