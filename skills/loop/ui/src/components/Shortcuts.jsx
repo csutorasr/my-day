@@ -1,12 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { useDashboard } from '../dashboard.jsx';
+import { useLoopView } from '../loop.jsx';
 
 export const SHORTCUTS = [
-  ['j / k', 'Next / previous item in Needs you'],
+  ['j / k', 'Next / previous item in Needs you (inbox only)'],
   ['a', 'Approve, send, mark reviewed or retry the focused item'],
   ['d', 'Decline or skip the focused item'],
   ['u', 'Undo the last action that is still waiting to be sent'],
   ['c', 'Copy the focused link'],
+  ['l', 'Open or close the loop view (merge requests, agents, activity)'],
+  ['Esc', 'Close the loop view'],
   ['?', 'Show these shortcuts'],
 ];
 
@@ -15,10 +18,14 @@ const inboxItems = () => [...document.querySelectorAll('#needs [data-inbox-item]
 const firstControl = (item) => item.querySelector(':is(a[href], button, input):not([tabindex="-1"])');
 
 // Global keyboard shortcuts. Ignored while typing in a field (Escape leaves the field).
+// The inbox keys (j, k, a, d) pause while the loop view covers the inbox.
 export function useShortcuts(openHelp) {
   const { outbox, undo, toast } = useDashboard();
+  const loop = useLoopView();
   const last = useRef(outbox);
   last.current = outbox;
+  const view = useRef(loop);
+  view.current = loop;
 
   useEffect(() => {
     const onKey = (e) => {
@@ -28,8 +35,12 @@ export function useShortcuts(openHelp) {
         if (e.key === 'Escape') el.blur();
         return;
       }
-      const item = el?.closest('[data-inbox-item]');
-      if (e.key === 'j' || e.key === 'k') {
+      if (document.querySelector('dialog[open]')) return;
+      const { open, available, toggle, hide } = view.current;
+      if (e.key === 'Escape' && open) { hide(); e.preventDefault(); return; }
+      if (e.key === 'l' && available) { toggle(); e.preventDefault(); return; }
+      const item = open ? null : el?.closest('[data-inbox-item]');
+      if ((e.key === 'j' || e.key === 'k') && !open) {
         const items = inboxItems();
         if (!items.length) return;
         const at = items.indexOf(item);
