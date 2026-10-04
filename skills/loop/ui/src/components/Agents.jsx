@@ -8,7 +8,7 @@ import { Ref } from './Ref.jsx';
 
 export function Agents() {
   const { state: s } = useDashboard();
-  const max = s?.loop.maxAgents || 3;
+  const max = s?.loop.maxAgents ?? 3;
   const running = (s?.items ?? []).filter((i) => i.agent_id);
   const finished = (s?.finishedToday ?? []).slice().reverse();
   const entry = 'flex items-start gap-3';
