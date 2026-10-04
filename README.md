@@ -8,8 +8,10 @@ for the things that need a human: brainstorms, decisions and reviews.
 Everything is configured per workspace in plain markdown (`.my-day/*.md`), so the same
 skills work with Jira, GitHub Issues, GitLab Issues, Linear or no tracker at all, on GitLab
 or GitHub. The loop itself is generic — it resolves whatever tasks its markdown describes; the
-development workflow above is the `dev` **profile**, the template set setup starts from. Run one
-loop per workspace folder; one dashboard shows them all.
+development workflow above is the `dev` **profile**, the template set setup starts from, and the
+`pm` profile runs a product manager's day the same way (backlog hygiene, specs, feedback,
+stakeholder replies, status updates). Run one loop per workspace folder; one dashboard shows
+them all.
 
 ![The my-day dashboard inbox: decisions, failures and reviews that need you, under a health strip](docs/dashboard.png)
 
@@ -61,7 +63,7 @@ flowchart LR
 | Skill | Role |
 |---|---|
 | `my-day:loop` | Orchestrator. Bootstraps, runs `tick`, acts, dispatches workers, schedules the next wakeup. Holds the shared code. |
-| `my-day:setup` | First-run interview → writes `.my-day/*.md` from a profile's templates (`setup dev`; `dev` is the only profile so far: tracker, code host, scope, workflow). Registers the workspace for the shared dashboard. |
+| `my-day:setup` | First-run interview → writes `.my-day/*.md` from a profile's templates (`setup dev`, `setup pm`; see [Profiles](#profiles)). Registers the workspace for the shared dashboard. |
 | `my-day:config` | Turns standing decisions made while the loop runs ("ignore ABC-50", "never merge on Fridays") into config edits. |
 | `my-day:worker` | Background agent: `develop`, `bug`, `review-fix`, `pipeline-fix`, `rebase` — each on its own git worktree. |
 | `my-day:summary` | "What happened today?", failures, `elaborate <id>`. |
@@ -131,6 +133,20 @@ free (`request`, `1on1`, …); `forge: none` turns off the code-host sync.
 |---|---|
 | `dev` | Repos side by side under the workspace root; workers are subagents of the loop session |
 | `dev-bundle` | A **bundle repo** that gitignores several cloned repos inside it; every code step runs as `claude -p` in the repo's worktree (`runner: claude-p`) |
+| `pm` | A product manager: grooms the backlog against a definition of ready, takes ideas and epics to a PRD and stories, groups feedback from chat and support into tickets, drafts replies to stakeholders and a scheduled status update. No code host, no workers; every message, comment or ticket it sends is a draft you approve, unless `WRITES.md` says otherwise |
+
+Two things every profile shares:
+
+- **Outward writes** (`WRITES.md`): each action the loop takes outside the workspace
+  (`jira: comment`, `slack: post channel`, `gitlab: merge`, `gmail: send` …) is `auto`, `ask` or
+  `never`. An `ask` becomes a **draft** in the inbox: what it writes where, the text editable in
+  place, Approve / Decline; the loop writes exactly what you approved. `never` is refused, with a
+  fallback where one fits (an email draft instead of sending). Without a `WRITES.md` everything is
+  `auto`, which is how dev workspaces have always run.
+- **Required sources** (`requires:` in `LOOP.md`, e.g. `mcp:atlassian, mcp:slack, cli:glab`):
+  the MCP servers and CLIs the loop cannot work without. CLIs are checked at start, MCP servers
+  by the session; a source that is missing or failing shows in the dashboard's health strip, its
+  steps are skipped, and the loop never mistakes its silence for "nothing to do".
 
 ### Workers as `claude -p`
 
@@ -156,7 +172,8 @@ optional `X.local.md` next to it holds personal overrides and is gitignored.
 
 | File | Defines |
 |---|---|
-| `LOOP.md` | Cadence, working hours, parallel agents, retry limit, dry run, `dreamSchedule` — plus the scope the Node side reads: `tracker`, `forge`, `group`, `ticketPattern`, `aiReviewer`, `targetBranch`. Body: `## Files` (the manifest) and *Tick priority* |
+| `LOOP.md` | Cadence, working hours, parallel agents, retry limit, dry run, `dreamSchedule` and any other `<name>Schedule` (e.g. `statusSchedule: Fri 14:00`) — plus the scope the Node side reads: `tracker`, `forge`, `group`, `ticketPattern`, `aiReviewer`, `targetBranch`, `requires`. Body: `## Files` (the manifest) and *Tick priority* |
+| `WRITES.md` | `auto` / `ask` / `never` per outward action (every profile; optional, absent = all `auto`) |
 | `QUERY-MY-TASKS.md` | Tracker queries for your tickets; ignored bucket tickets |
 | `QUERY-MY-REVIEWS.md` | Review-queue behaviour (the sync itself is automatic) |
 | `QUERY-INBOX.md` / `TRIAGE.md` | Unassigned work and how to triage it |
@@ -166,6 +183,10 @@ optional `X.local.md` next to it holds personal overrides and is gitignored.
 | `MERGE-GATES.md` | Gates, merge method, rebase and force-push rules, merge trains |
 | `POST-MR.md` | Pipeline handling, reviewer selection, ticket transitions |
 | `DREAM.md` (optional) | Checks `my-day:dream` runs over the loop's history; defaults to the template |
+
+The table lists the `dev` profile's files; the `pm` profile has `QUERY-BACKLOG.md`, `HYGIENE.md`,
+`QUERY-FEEDBACK.md`, `FEEDBACK.md`, `QUERY-MENTIONS.md`, `WORKFLOW-SPEC.md` and `STATUS.md`
+instead.
 
 Add to `.gitignore`:
 
@@ -184,9 +205,9 @@ Add to `.gitignore`:
 - `summary`, `summary since Monday`, `elaborate bug-1`, `retry bug-1`, `pause`, `resume`,
   `stop`.
 - The dashboard puts everything that needs you in one inbox: decisions (answer, approve or
-  decline right there, with the MR's title and gates beside the question), failures and review
-  requests (Done / Skip), under a health strip (live, next check, MRs blocked on you, agents
-  busy); the tab title shows the count. The Loop button (or `l`) opens the loop view over it: your
+  decline right there, with the MR's title and gates beside the question), drafts of outward
+  writes (edit the text, then approve or decline), failures and review requests (Done / Skip),
+  under a health strip (live, next check, MRs blocked on you, agents busy, sources down); the tab title shows the count. The Loop button (or `l`) opens the loop view over it: your
   MRs grouped by what they wait for, tickets, agents and the activity log (`#loop` survives a
   reload; Esc goes back, and "Waiting for you" on an MR card jumps to that question). It also
   sends web push notifications. Every dashboard action waits a few seconds
@@ -212,6 +233,8 @@ CLI, `skills/loop/bin/state.mjs`, backed by SQLite in `.my-day/state.db`:
 | `tick` | Code-host sync (MRs + review requests), merge-gate verdicts, schedule, compact to-do JSON |
 | `dispatch` / `reconcile` | Worker bookkeeping: attempts, links, new MRs, retry limit → escalation |
 | `dream-data` / `dream-done` | History bundle for a dream; record `lastDreamAt` |
+| `ask --draft`, `wrote` | A draft of an outward write to approve; mark an approved one written (`tick` lists approved drafts until then) |
+| `source`, `sources`, `schedule-done` | Health of the required sources; record a `<name>Schedule` run |
 | `pause` / `resume`, `watch` | Stop dispatching; stream dashboard clicks and finished runs to the session |
 | `summary`, `show`, `list`, `ask`, `answer`, … | State queries and updates (`state.mjs help`) |
 
@@ -222,6 +245,8 @@ orchestrator writes all task state; workers only report a JSON result.
 
 - **Dry run** (`dryRun: true`) replaces every outward action with a logged event — use it to
   rehearse a new setup.
+- **Outward writes** follow `WRITES.md`: `ask` ones wait for your approval as drafts, `never`
+  ones are refused; workers hand theirs back as drafts.
 - **Working hours** gate dispatching and outward actions (read-only refresh continues).
 - Merges only when every gate in `MERGE-GATES.md` passes; force-push only where that file
   allows it (e.g. `--force-with-lease` after a failed server-side rebase).

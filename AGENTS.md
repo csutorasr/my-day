@@ -6,8 +6,10 @@ Notes for coding agents working on this repo. Read `README.md` first.
 
 - `skills/*/SKILL.md`: the plugin's skills. `skills/loop/bin/state.mjs` is the CLI the loop runs.
 - `skills/loop/templates/<profile>/`: a profile = `SETUP.md` (its interview) + the `.md` files it
-  writes; `templates/DREAM.md` is shared. A new kind of loop is a new profile folder, not new code.
-  `LOOP.md`'s `## Files` section is the manifest `config missing` checks.
+  writes (`dev`, `dev-bundle`, `pm`); shared by all: `templates/WRITES.md` (outward-write policy),
+  `templates/TRACKERS.md` (tracker interview), `templates/DREAM.md`. A new kind of loop is a new
+  profile folder, not new code. `LOOP.md`'s `## Files` section is the manifest `config missing`
+  checks; `requires:` lists the MCP servers / CLIs it needs.
 - `skills/loop/lib`: state DB, config, forge and helpers; `home.mjs` is the machine home
   (`~/.my-day`, `MY_DAY_HOME`): loop registry, liveness, migration. `skills/loop/server`: the one
   dashboard server per machine, reading every registered loop's `state.db`. `runs.mjs` is the
@@ -16,8 +18,8 @@ Notes for coding agents working on this repo. Read `README.md` first.
 - `skills/loop/ui`: the dashboard UI (React + Vite + Tailwind v4 + shadcn/ui on Base UI), an npm
   workspace. `src/components/ui` is shadcn's (add with `pnpm dlx shadcn@latest add <name>` run in
   `skills/loop/ui`); app components compose them. `skills/loop/test`: `node --test` suites.
-- `skills/loop/e2e`: Playwright test on imaginary workspaces under a temp home (`seed.mjs`: two
-  running loops, one stopped); writes the README screenshots.
+- `skills/loop/e2e`: Playwright test on imaginary workspaces under a temp home (`seed.mjs`: three
+  running loops — two dev, one pm — and one stopped); writes the README screenshots.
 
 ## Rules
 
