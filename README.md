@@ -7,7 +7,9 @@ for the things that need a human: brainstorms, decisions and reviews.
 
 Everything is configured per workspace in plain markdown (`.my-day/*.md`), so the same
 skills work with Jira, GitHub Issues, GitLab Issues, Linear or no tracker at all, on GitLab
-or GitHub.
+or GitHub. The loop itself is generic — it resolves whatever tasks its markdown describes; the
+development workflow above is the `dev` **profile**, the template set setup starts from. Run one
+loop per workspace folder; one dashboard shows them all.
 
 ![The my-day dashboard inbox: decisions, failures and reviews that need you, under a health strip](docs/dashboard.png)
 
@@ -59,7 +61,7 @@ flowchart LR
 | Skill | Role |
 |---|---|
 | `my-day:loop` | Orchestrator. Bootstraps, runs `tick`, acts, dispatches workers, schedules the next wakeup. Holds the shared code. |
-| `my-day:setup` | First-run interview: tracker, code host, scope, workflow → writes `.my-day/*.md` from templates. |
+| `my-day:setup` | First-run interview → writes `.my-day/*.md` from a profile's templates (`setup dev`; `dev` is the only profile so far: tracker, code host, scope, workflow). Registers the workspace for the shared dashboard. |
 | `my-day:config` | Turns standing decisions made while the loop runs ("ignore ABC-50", "never merge on Fridays") into config edits. |
 | `my-day:worker` | Background agent: `develop`, `bug`, `review-fix`, `pipeline-fix`, `rebase` — each on its own git worktree. |
 | `my-day:summary` | "What happened today?", failures, `elaborate <id>`. |
@@ -103,6 +105,28 @@ it found): which tracker and code host you use, which tickets count as your deve
 which bucket tickets to ignore, how bugs and stories flow, your merge gates, who reviews what.
 Then the dashboard opens at `http://127.0.0.1:4711` and the loop starts.
 
+## Several loops
+
+Start `/my-day:loop` in each workspace folder you want worked on (`~/work/client-a`,
+`~/work/client-b`, …): one Claude Code session per folder, each with its own `.my-day/` store and
+config. The first loop starts the machine's one dashboard; the others join it. The dashboard shows
+the loops whose session is running; with more than one, a filter picks workspaces and **Show
+stopped** adds the rest. `stop` in a session marks its loop stopped (`state.mjs stop`).
+
+The machine home `~/.my-day/` (`MY_DAY_HOME`) holds the list of loops (`loops/`), the dashboard's
+process files, its web-push keys and subscriptions, and an optional `SETTINGS.md` with `port` and
+`pushSubject` (otherwise the first loop's `LOOP.md` values). Upgrading from 0.7: keys and phone
+subscriptions move there on the first start; **restart running loops after updating** so none of
+them still runs the per-workspace dashboard.
+
+### Profiles
+
+A profile is a folder under `skills/loop/templates/` with a `SETUP.md` (its interview) and the
+files it writes. `LOOP.md`'s `## Files` section lists the files a workspace's loop needs and its
+*Tick priority* says what each step does, so a new kind of loop (a UX loop fed by other sessions,
+a team-lead loop with weekly 1:1 prep, …) is a new template folder, not new code. Item types are
+free (`request`, `1on1`, …); `forge: none` turns off the code-host sync.
+
 ## Configuration
 
 `.my-day/` in the workspace root. Every `X.md` is shared with the team (commit it); an
@@ -110,7 +134,7 @@ optional `X.local.md` next to it holds personal overrides and is gitignored.
 
 | File | Defines |
 |---|---|
-| `LOOP.md` | Cadence, working hours, parallel agents, retry limit, dry run, `dreamSchedule` — plus the scope the Node side reads: `tracker`, `forge`, `group`, `ticketPattern`, `aiReviewer`, `targetBranch` |
+| `LOOP.md` | Cadence, working hours, parallel agents, retry limit, dry run, `dreamSchedule` — plus the scope the Node side reads: `tracker`, `forge`, `group`, `ticketPattern`, `aiReviewer`, `targetBranch`. Body: `## Files` (the manifest) and *Tick priority* |
 | `QUERY-MY-TASKS.md` | Tracker queries for your tickets; ignored bucket tickets |
 | `QUERY-MY-REVIEWS.md` | Review-queue behaviour (the sync itself is automatic) |
 | `QUERY-INBOX.md` / `TRIAGE.md` | Unassigned work and how to triage it |
@@ -126,9 +150,6 @@ Add to `.gitignore`:
 ```
 .my-day/*.local.md
 .my-day/state.db*
-.my-day/.vapid.json
-.my-day/server.pid
-.my-day/server.log
 .my-day/dreams/
 .worktrees/
 ```
@@ -151,7 +172,8 @@ Add to `.gitignore`:
   sends, `d` declines, `u` undoes, `c` copies a link, `?` lists them. On a phone the dashboard is the inbox
   only, and approvals are not offered: decide those on a larger screen. Every MR / ticket / link has quick actions: copy, open, and a loop
   action (rebase, fix pipeline, fix review, merge step, retry, ask why). Pause / resume the loop
-  from the header.
+  from the header (with several loops shown: per loop, in the health strip). The loop view shows
+  one loop at a time, with a switcher when several are shown.
 - Dashboard clicks reach the loop on its next `tick` (`fromDashboard`); the loop also runs
   `state.mjs watch-dashboard` as a monitor, so a click wakes it within seconds.
 
@@ -162,7 +184,8 @@ CLI, `skills/loop/bin/state.mjs`, backed by SQLite in `.my-day/state.db`:
 
 | Command | Does |
 |---|---|
-| `bootstrap` | Config check, DB, dashboard server, orphaned agents |
+| `bootstrap` | Config check, DB, registers the loop in `~/.my-day`, one-time migration, shared dashboard server, orphaned agents |
+| `loops`, `stop` | The machine's loops (running / stopped); mark this loop stopped |
 | `tick` | Code-host sync (MRs + review requests), merge-gate verdicts, schedule, compact to-do JSON |
 | `dispatch` / `reconcile` | Worker bookkeeping: attempts, links, new MRs, retry limit → escalation |
 | `dream-data` / `dream-done` | History bundle for a dream; record `lastDreamAt` |
@@ -195,10 +218,10 @@ so an installed plugin never builds anything.
 ```bash
 npm install          # Vite, React, Tailwind, shadcn and Playwright, development only
 npm run ui:dev       # hot reload against the running dashboard (MY_DAY_URL, default :4711)
-npm run ui:demo      # the real server on an imaginary workspace (skills/loop/e2e/seed.mjs), port 4712
+npm run ui:demo      # the real server on three imaginary workspaces (skills/loop/e2e/seed.mjs), port 4712
 npm run ui:dev:demo  # hot reload against `ui:demo`
 npm run ui:build     # rebuild skills/loop/server/public; commit the result
-npm run test:e2e     # build, seed the imaginary workspace, drive the dashboard in Chrome
+npm run test:e2e     # build, seed the imaginary workspaces, drive the dashboard in Chrome
 ```
 
 Add a shadcn component from `skills/loop/ui`: `pnpm dlx shadcn@latest add <name>` (it lands in
