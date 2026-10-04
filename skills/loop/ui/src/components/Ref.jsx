@@ -2,6 +2,7 @@ import { Copy01Icon, LinkSquare02Icon } from '@hugeicons/core-free-icons';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useDashboard, useIsPhone } from '../dashboard.jsx';
+import { apiFor } from '../selection.js';
 import { ACTION_HINT, ACTION_LABEL, RISKY_ACTIONS, actionsFor, label, pendingRequests } from '../format.js';
 import { Icon } from './Icon.jsx';
 
@@ -14,7 +15,7 @@ export function Actions({ item, actions }) {
   const pending = pendingRequests(state);
   const acts = (actions ?? actionsFor(item, state)).filter((a) => !(phone && RISKY_ACTIONS.has(a)));
   return acts.map((a) => {
-    const key = `request:${item.id}:${a}`;
+    const key = `request:${item.loop}:${item.id}:${a}`;
     if (isQueued(key)) {
       return (
         <Button key={a} size="xs" variant="secondary" data-act onClick={() => undo(key)} title="Not sent yet. Click to take it back.">
@@ -22,7 +23,7 @@ export function Actions({ item, actions }) {
         </Button>
       );
     }
-    const sent = pending.has(`${item.id}:${a}`);
+    const sent = pending.has(`${item.loop}:${item.id}:${a}`);
     return (
       <Button
         key={a}
@@ -35,7 +36,7 @@ export function Actions({ item, actions }) {
         onClick={() => queue({
           key,
           label: `${ACTION_LABEL[a]} ${label(item)}`,
-          path: `/api/items/${item.id}/request`,
+          path: `${apiFor(item.loop)}/items/${item.id}/request`,
           payload: { action: a },
           ok: `${ACTION_LABEL[a]} requested for ${label(item)}. The loop picks it up within seconds.`,
         })}

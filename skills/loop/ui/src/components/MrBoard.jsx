@@ -20,12 +20,13 @@ const LANES = [
 // Open MRs grouped by what each waits for. Shared with the status line.
 export function mrLanes(s) {
   const closed = new Set(s.closedStatuses);
-  const asked = new Set(s.questions.filter((q) => q.item_id).map((q) => q.item_id));
+  // Item ids repeat across loops (mr-1 in each workspace): match a question to its own loop's MR.
+  const asked = new Set(s.questions.filter((q) => q.item_id).map((q) => `${q.loop}:${q.item_id}`));
   const mrs = s.items.filter((i) => i.type === 'mr' && !closed.has(i.status));
   const lanes = Object.fromEntries(LANES.map((l) => [l.key, { ...l, items: [] }]));
   for (const m of mrs) {
     if (m.agent_id) lanes.agent.items.push(m);
-    else if (asked.has(m.id) || m.failed || m.status === 'blocked') lanes.you.items.push(m);
+    else if (asked.has(`${m.loop}:${m.id}`) || m.failed || m.status === 'blocked') lanes.you.items.push(m);
     else if (m.data?.verdict === 'merge') lanes.ready.items.push(m);
     else lanes.wait.items.push(m);
   }
@@ -40,7 +41,7 @@ function MrCard({ m }) {
   const ticket = m.data?.ticketKeys?.[0];
   const links = latestLinks(m);
   // A decision taken on the dashboard stays visible on the card until the loop has acted on it.
-  const nextText = q && isQueued(`q:${q.id}`)
+  const nextText = q && isQueued(`q:${q.loop}:${q.id}`)
     ? `Your answer to ${q.id} is being sent`
     : q
     ? `Waiting for you · ${q.id}`
@@ -64,9 +65,9 @@ function MrCard({ m }) {
           </div>
         )}
         <div className={cn('mx-3 flex items-center justify-between gap-2 border-t pt-2.5 text-xs', q ? 'text-warning' : answered ? 'text-success' : 'text-muted-foreground')}>
-          {q && !isQueued(`q:${q.id}`) && loop?.open ? (
+          {q && !isQueued(`q:${q.loop}:${q.id}`) && loop?.open ? (
             // Answering happens in the inbox: close the loop view and put focus on that question.
-            <button type="button" className="text-left font-medium underline underline-offset-3 hover:text-foreground" onClick={() => loop.hide(`[data-inbox-item="${q.id}"] :is(a[href], button, input):not([tabindex="-1"])`)}>
+            <button type="button" className="text-left font-medium underline underline-offset-3 hover:text-foreground" onClick={() => loop.hide(`[data-loop="${q.loop}"][data-inbox-item="${q.id}"] :is(a[href], button, input):not([tabindex="-1"])`)}>
               {nextText}<span className="sr-only">, answer it in the inbox</span>
             </button>
           ) : <span>{nextText}</span>}

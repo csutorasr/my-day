@@ -48,10 +48,11 @@ export function actionsFor(i, state) {
 }
 
 // Requests sent from the dashboard that the loop has not picked up yet, as "itemId:action".
+// Keyed `loop:item:action`; each loop's own last tick decides what it has picked up.
 export function pendingRequests(state) {
-  const since = state?.loop.lastTickAt ?? '';
+  const lastTick = (loop) => state?.loops?.find((l) => l.id === loop)?.loop.lastTickAt ?? state?.loop.lastTickAt ?? '';
   const out = new Set();
-  for (const e of state?.recent ?? []) if (e.kind === 'dashboard-request' && e.ts > since) out.add(`${e.item_id}:${e.data?.action}`);
+  for (const e of state?.recent ?? []) if (e.kind === 'dashboard-request' && e.ts > lastTick(e.loop)) out.add(`${e.loop}:${e.item_id}:${e.data?.action}`);
   return out;
 }
 

@@ -5,6 +5,8 @@ import { Header } from './components/Header.jsx';
 import { NeedsYou } from './components/NeedsYou.jsx';
 import { OfflineNotice } from './components/OfflineNotice.jsx';
 import { StatusLine } from './components/StatusLine.jsx';
+import { LoopFilter } from './components/LoopFilter.jsx';
+import { NoLoopsNotice } from './components/NoLoopsNotice.jsx';
 import { Toasts } from './components/Toasts.jsx';
 import { ShortcutsDialog, useShortcuts } from './components/Shortcuts.jsx';
 
@@ -17,6 +19,8 @@ function useTitleCount() {
 
 function Dashboard() {
   const { open } = useLoopView();
+  const { states } = useDashboard();
+  const none = states?.length === 0;
   const [help, setHelp] = useState(false);
   const openHelp = useCallback(() => setHelp(true), []);
   useShortcuts(openHelp);
@@ -28,8 +32,13 @@ function Dashboard() {
       <Header onShortcuts={openHelp} />
       <main id="main" className="mx-auto flex max-w-[880px] flex-col gap-6 p-6 max-sm:px-4" inert={open}>
         <OfflineNotice />
-        <StatusLine />
-        <NeedsYou />
+        {none ? <NoLoopsNotice /> : (
+          <>
+            <LoopFilter />
+            <StatusLine />
+            <NeedsYou />
+          </>
+        )}
       </main>
       <LoopPanel />
       <Toasts />
