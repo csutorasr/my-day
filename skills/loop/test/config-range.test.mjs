@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveRange } from '../lib/range.mjs';
@@ -121,6 +121,26 @@ test('requires: a comma list of sources, brackets optional; absent → none; WRI
   assert.deepEqual(requiredSources(loopSettings(d)), ['mcp:atlassian', 'cli:gh']);
   assert.ok(OPTIONAL.includes('WRITES'));
   assert.ok(!requiredFiles(d).includes('WRITES'));
+});
+
+test('the pm profile: its manifest lists every file of the folder; no code host, no workers, sources required', () => {
+  const folder = new URL('../templates/pm/', import.meta.url);
+  const d = mkdtempSync(join(tmpdir(), 'myday-pm-'));
+  writeFileSync(join(d, 'LOOP.md'), readFileSync(new URL('LOOP.md', folder), 'utf8'));
+  const files = readdirSync(folder).filter((f) => f.endsWith('.md') && f !== 'SETUP.md').map((f) => f.slice(0, -3));
+  assert.deepEqual(new Set(requiredFiles(d)), new Set(files));
+  const s = loopSettings(d);
+  assert.equal(s.forge, 'none');
+  assert.equal(s.maxAgents, 0);
+  assert.deepEqual(requiredSources(s), ['<REQUIRES>']);
+  assert.match(s.statusSchedule, /<STATUS_SLOT>/);
+  // Every profile's interview uses the shared tracker interview and fills WRITES.md.
+  for (const p of ['dev', 'pm']) {
+    const setup = readFileSync(new URL(`../templates/${p}/SETUP.md`, import.meta.url), 'utf8');
+    assert.match(setup, /templates\/TRACKERS\.md/, p);
+    assert.match(setup, /## Writes defaults/, p);
+  }
+  assert.match(readFileSync(new URL('../templates/WRITES.md', import.meta.url), 'utf8'), /\| default \| ask \|/);
 });
 
 test('runner defaults to agent', () => {

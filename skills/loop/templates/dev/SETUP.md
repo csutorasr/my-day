@@ -17,31 +17,20 @@ GitLab workspace); adapt them to what the user actually uses — never assume th
 3. **Ticket ↔ MR link** — how an MR names its ticket (branch/title). Propose a regex from
    recent MRs (`KEY-123` → default; `#123` for GitHub/GitLab issues) → `--ticket-pattern`.
 
-## 2. Tracker interview (only the block for the chosen tracker)
-Every tracker gets the same five questions, phrased in that tracker's terms:
-**(a)** which container(s) hold the work, **(b)** how items map to `bug` / `story` /
-`subtask`, **(c)** which states mean *to develop*, *in review*, *dev done*, *blocked*,
-**(d)** continuous / bucket items to ignore, **(e)** labels or areas that belong to other teams.
-
-For (d), propose candidates: the user's open items whose title looks like a bucket
-(`Generic`, `activities`, `meetings`, `support`, `overhead`, `time tracking`), umbrella items
-(epics, parents without code), and items open for months with no linked MR. The confirmed
-list goes into `## Scope` of `QUERY-MY-TASKS.md` and into every query's exclusion clause.
-
-| Tracker | Access | (a) container | (b) type mapping | (c) states | "mine" / "unassigned" |
-|---|---|---|---|---|---|
-| Jira | Atlassian MCP (`searchJiraIssuesUsingJql`, explicit `fields`, markdown) or `jira` CLI | project keys | issue types (Story/Task/Sub-task/Bug) | workflow statuses | `assignee = currentUser()` / `assignee is EMPTY`; exclude `key not in (…)` |
-| GitHub Issues | `gh issue list --json …`, Projects v2 via `gh project item-list` | repos or org, optional project board | labels (`bug`, `story` …), sub-issues | open/closed + project Status field or labels | `--assignee @me` / `no:assignee`; exclude by number or label |
-| GitLab Issues | `glab issue list -O json`, `glab api` | group/projects, optional board | labels, issue type, tasks | open/closed + board lists / scoped labels (`workflow::…`) | `--assignee @me` / `--assignee none` |
-| Linear | Linear MCP or API | team keys, projects, cycles | labels, sub-issues | workflow states per team | `assignee: me` / unassigned |
-| Azure Boards | `az boards query --wiql` | org / project / area path | work item types (Bug, User Story, Task) | states | `[System.AssignedTo] = @Me` |
-| other | ask how they list "my tickets" (CLI, MCP, API) | ask | ask | ask | ask |
-| none | — | — | skip ticket workflows; the loop only handles MRs/PRs and reviews | — | — |
+## 2. Tracker interview
+Follow `templates/TRACKERS.md` (only the block for the chosen tracker). For this profile:
+**(b)** maps to `bug` / `story` / `subtask`; **(c)** asks which states mean *to develop*,
+*in review*, *dev done*, *blocked*; **(d)** candidates also include parents without code and
+items open for months with no linked MR, and the confirmed list goes into `## Scope` of
+`QUERY-MY-TASKS.md`. Tracker `none` → skip ticket workflows; the loop only handles MRs/PRs and
+reviews.
 
 Run the resulting "my tickets" query once, show the list, and ask "anything here that isn't
 development work?". Machine-read scope goes into `LOOP.md` front matter (`tracker`, `forge`,
-`group`, `ticketPattern`, `aiReviewer`, `targetBranch`) — `state.mjs tick` syncs the code host
-from it, so check it with `$SM tick` once the files exist.
+`group`, `ticketPattern`, `aiReviewer`, `targetBranch`, `requires`) — `state.mjs tick` syncs the
+code host from it, so check it with `$SM tick` once the files exist. `requires` lists what the
+loop cannot work without: the tracker's MCP server or CLI and the code host CLI (e.g.
+`mcp:atlassian, cli:glab`).
 
 ## 3. Workflow interview
 One question at a time, proposing a default:
@@ -54,6 +43,9 @@ One question at a time, proposing a default:
 - AI reviewer: job name and bot account, if any (FIX-REVIEW, POST-MR).
 - Reviewers by repo/domain, from the roster (POST-MR).
 - Ticket transitions after MR open / after merge (POST-MR).
+- Outward writes: propose the `## Writes defaults` below for `WRITES.md`; ask which to tighten
+  (e.g. `jira: transition` → `ask`). Everything stays `auto` unless the user says otherwise,
+  so the dev loop behaves as it always has.
 - "Enable weekly dreaming? When?" — a local reflection run (`my-day:dream`) that reads the
   loop's history and proposes config and team improvements. Propose `Fri 16:00` (inside
   working hours); the answer → `dreamSchedule` in `LOOP.local.md`, `''` = off. Yes → also
@@ -61,7 +53,7 @@ One question at a time, proposing a default:
 
 ## 4. Write the files
 For each missing file in `LOOP.md` → QUERY-* → TRIAGE → WORKFLOW-* → DEVELOP → FIX-REVIEW →
-MERGE-GATES → POST-MR → DREAM order (DREAM.md is optional: write it only when dreaming is
+MERGE-GATES → POST-MR → WRITES → DREAM order (DREAM.md is optional: write it only when dreaming is
 enabled or the user wants it; without it the dream uses the template defaults):
 - Start from the template, replace every `<PLACEHOLDER>`, and rewrite tool-specific parts
   for the chosen tracker and code host (tracker queries, transition/assign/comment commands;
@@ -71,6 +63,15 @@ enabled or the user wants it; without it the dream uses the template defaults):
 - Personal data (account ids, emails, `dryRun`, port, `maxAgents`) → `LOOP.local.md`
   (`trackerAccountId`, `gitEmail`, `dreamSchedule`), never the shared files. Shared queries use
   "current user" forms (`currentUser()`, `@me`, `@Me`).
+
+## Writes defaults
+For `WRITES.md` (from `templates/WRITES.md`), named for the user's tracker and code host:
+
+| action | policy |
+|---|---|
+| gitlab: merge · push · open MR · update MR · rebase · reply thread · resolve thread · set reviewers · retry CI | auto |
+| jira: assign · transition · comment | auto |
+| default | ask |
 
 ## Code host commands
 Templates show GitLab (`glab`). For GitHub rewrite the commands with the equivalents:
