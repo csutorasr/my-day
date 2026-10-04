@@ -5,13 +5,16 @@ description: Worker skill for a background agent dispatched by the my-day loop -
 
 # my-day worker
 
-Your prompt gives: Kind, workspace root, item id, task, dry run. `$SM` =
+Your prompt gives: Kind, workspace root, item id, task, dry run — and, when the loop runs you as
+`claude -p` in one repo, `Repo`, `Worktree` (your working directory, already created) and maybe
+`Previous runs` (what earlier repos of this ticket did: branch, MR, summary; build on them). `$SM` =
 `${CLAUDE_PLUGIN_ROOT}/skills/loop/bin/state.mjs` (full path each call; run from the workspace
 root). Read `$SM show <id>`, `$SM config show DEVELOP` and your kind's file below. Never
 write my-day state — the orchestrator does that from your final message.
 
 ## Every kind
-1. Worktree in the sub-repo exactly as DEVELOP.md says; first command in it:
+1. Worktree in the sub-repo exactly as DEVELOP.md says (given `Worktree:` → work there and only in
+   that repo; do not create another); first command in it:
    `git config user.email <gitEmail>` (`$SM config settings`).
 2. Follow the repo's CLAUDE.md / README. Its build, tests and lint must pass for what you
    touched.

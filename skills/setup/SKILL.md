@@ -28,7 +28,8 @@ request (`setup dev`) wins; with only one profile, use it without asking; otherw
 kind of work this workspace's loop does, one option per profile (its `SETUP.md` title).
 
 ## 3. Interview and files
-Follow `templates/<profile>/SETUP.md`. For every file it writes:
+Follow `templates/<profile>/SETUP.md`. A profile may build on another one (its `SETUP.md` says so):
+files it does not have come from that profile's folder. For every file it writes:
 - Start from the template, replace every `<PLACEHOLDER>`, rewrite tool-specific parts for what
   the user actually uses, delete sections that don't apply.
 - Show the result, run its queries once, then save. Remove the `<!-- TEMPLATE … -->` line.
