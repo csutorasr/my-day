@@ -30,11 +30,14 @@ export function reconcile(db, id, raw, { retryLimit }) {
   if (r.worktree) fields.worktree = r.worktree;
   S.setFields(db, id, fields);
 
+  // One MR (subagent worker) or one per repo (a claude -p chain): `mrId` is the first.
   let mrId = null;
-  if (r.mrUrl) {
-    S.addLink(db, id, { kind: 'mr', url: r.mrUrl });
-    const ref = extFromUrl(r.mrUrl);
-    if (ref) mrId = S.upsertItem(db, { type: 'mr', ext: ref.ext, url: r.mrUrl, parent: id, data: { project: ref.project, iid: ref.iid } }).id;
+  for (const url of [...new Set([r.mrUrl, ...(r.mrUrls ?? [])].filter(Boolean))]) {
+    S.addLink(db, id, { kind: 'mr', url });
+    const ref = extFromUrl(url);
+    if (!ref) continue;
+    const mr = S.upsertItem(db, { type: 'mr', ext: ref.ext, url, parent: id, data: { project: ref.project, iid: ref.iid } }).id;
+    mrId ??= mr;
   }
   for (const l of r.links ?? []) if (l?.url) S.addLink(db, id, { kind: l.kind ?? 'other', url: l.url, label: l.label });
   S.addEvent(db, { itemId: id, kind: 'worker', message: `${id} ${r.status}: ${r.summary ?? ''}`.trim(), data: { status: r.status, commits: r.commits, blockers: r.blockers, handled: r.handled } });

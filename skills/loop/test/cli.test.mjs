@@ -153,3 +153,58 @@ test('loops register lists the workspace; stop marks it stopped; a new session r
   assert.equal(JSON.parse(r('loops', 'forget', reg.id, '--json')).forgotten, true);
   assert.equal(mine(), undefined);
 });
+
+test('run → tick collects the chain; watch reports a finished run; bootstrap keeps run agents', async () => {
+  const { chmodSync, mkdirSync } = await import('node:fs');
+  const fake = fileURLToPath(new URL('./fixtures/fake-claude.mjs', import.meta.url));
+  chmodSync(fake, 0o755);
+  const root = mkdtempSync(join(tmpdir(), 'myday-cli-run-'));
+  const d = join(root, '.my-day');
+  mkdirSync(join(root, 'wt', 'web'), { recursive: true });
+  const env = { ...process.env, MY_DAY_DIR: d, GLAB_BIN: '/usr/bin/false', CLAUDE_BIN: fake };
+  const r = (...a) => execFileSync(process.execPath, [CLI, ...a], { env, encoding: 'utf8' }).trim();
+  r('upsert', '--type', 'bug', '--ext', 'jira:RUN-1');
+  // The task comes on stdin: ticket text never passes through a shell command line.
+  const started = JSON.parse(execFileSync(process.execPath, [CLI, 'run', 'bug-1', '--kind', 'bug', '--chain', `web=${join(root, 'wt', 'web')}`, '--status', 'developing'], { env, encoding: 'utf8', input: 'ok\n' }));
+  assert.deepEqual(started.started, { repo: 'web' });
+  assert.equal(JSON.parse(r('get', 'bug-1')).status, 'developing');
+  assert.equal(JSON.parse(r('get', 'bug-1')).agent_id, `run:${started.chain}`);
+  // The fake has exited by now: watch sees it, a new session keeps the item's run, tick reconciles.
+  assert.deepEqual(r('watch', '--once').split('\n').filter(Boolean).map((l) => JSON.parse(l)), [{ kind: 'run-finished', item: 'bug-1', chain: started.chain }]);
+  assert.match(JSON.stringify(JSON.parse(r('runs', '--json'))), /"status":"running"/);
+  const t = JSON.parse(r('tick'));
+  assert.deepEqual(t.runs.finished.map((f) => [f.item, f.next]), [['bug-1', 'advance']]);
+  assert.equal(JSON.parse(r('get', 'bug-1')).agent_id, null);
+  assert.match(r('runs'), /bug-1-1\s+done\s+web done/);
+  assert.equal(JSON.parse(r('run-stop', 'bug-1')).stopped, false);
+});
+
+test('bootstrap --new-session clears subagent orphans but keeps claude -p runs', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'myday-cli-orph-'));
+  const d = join(root, '.my-day');
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  mkdirSync(d, { recursive: true });
+  const { createServer } = await import('node:net');
+  const port = await new Promise((ok) => { const srv = createServer().listen(0, '127.0.0.1', () => { const p = srv.address().port; srv.close(() => ok(p)); }); });
+  writeFileSync(join(d, 'LOOP.md'), `---\nport: ${port}\n---\n# Loop\n## Files\n`);
+  const r = (...a) => execFileSync(process.execPath, [CLI, ...a], { env: { ...process.env, MY_DAY_DIR: d }, encoding: 'utf8' }).trim();
+  r('upsert', '--type', 'bug', '--ext', 'jira:O-1');
+  r('upsert', '--type', 'bug', '--ext', 'jira:O-2');
+  r('set', 'bug-1', 'agent_id=w1');
+  r('set', 'bug-2', 'agent_id=run:bug-2-1');
+  r('upsert', '--type', 'bug', '--ext', 'jira:O-3');
+  r('set', 'bug-3', 'agent_id=run:bug-3-1');
+  mkdirSync(join(d, 'runs'), { recursive: true });
+  writeFileSync(join(d, 'runs', 'bug-2-1.json'), JSON.stringify({ id: 'bug-2-1', item: 'bug-2', status: 'running', startedAt: new Date().toISOString(), steps: [] }));
+  let orphans;
+  try {
+    ({ orphans } = JSON.parse(r('bootstrap', '--new-session')));
+  } finally {
+    r('server', 'stop');
+  }
+  // bug-3's chain file is gone: nothing will ever collect it, so it is an orphan too.
+  assert.deepEqual(orphans, ['bug-1', 'bug-3']);
+  assert.equal(JSON.parse(r('get', 'bug-1')).agent_id, null);
+  assert.equal(JSON.parse(r('get', 'bug-3')).agent_id, null);
+  assert.equal(JSON.parse(r('get', 'bug-2')).agent_id, 'run:bug-2-1');
+});
