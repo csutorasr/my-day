@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // my-day state CLI — the only door to .my-day/state.db. Run with no args for help.
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import * as S from '../lib/db.mjs';
@@ -10,13 +10,15 @@ import * as server from '../lib/serverctl.mjs';
 import { schedule } from '../lib/schedule.mjs';
 import { sync } from '../lib/sync.mjs';
 import { dispatch, reconcile } from '../lib/reconcile.mjs';
+import { forget, homeDir, homeSettings, listLoops, loopStatus, migrate, register } from '../lib/home.mjs';
 
-const HELP = `my-day state CLI   (state dir: $MY_DAY_DIR or ./.my-day)
+const HELP = `my-day state CLI   (state dir: $MY_DAY_DIR or ./.my-day; machine home: $MY_DAY_HOME or ~/.my-day)
 
 Loop       bootstrap [--new-session]  config check, DB, dashboard, orphaned agents → JSON
            tick                       code-host sync + schedule + what to act on → JSON
            sync | schedule            the two halves of tick
            pause | resume             stop / restart dispatching (the dashboard has the same button)
+           stop                       mark this loop stopped (the dashboard hides it by default)
            watch-dashboard [--interval ms]   stream dashboard clicks as JSON lines (run as a monitor)
            dispatch <id> --agent <name> [--status s]   record a started worker (attempts++)
            reconcile <id> [--result '<json|message>'] (or stdin)   apply a worker's report
@@ -39,7 +41,9 @@ Dream      dream-data [--since <D|iso>]  history bundle for my-day:dream (defaul
            dream-done [--report <file>] "summary"   record lastDreamAt, log dream + notify events
 Reviews    review done|skip <id>
 Config     config missing | config show <NAME> | config all | config settings | config dir
-Server     server start | server stop | server status
+Loops      loops [--json]             every loop on this machine (~/.my-day/loops) with running / stopped
+           loops register | loops forget <id|path>   add this workspace / remove one from the list
+Server     server start | server stop | server status   (the one dashboard in the machine home)
 Debug      init | dump
 Add --json to any read for machine output.`;
 
@@ -59,6 +63,7 @@ const { values: opt, positionals: pos } = parseArgs({
 });
 
 const dir = resolve(process.env.MY_DAY_DIR ?? join(process.cwd(), '.my-day'));
+const home = homeDir();
 const out = (v) => console.log(typeof v === 'string' ? v : JSON.stringify(v, null, 2));
 const die = (msg) => { console.error(`my-day: ${msg}`); process.exit(1); };
 let _db;
@@ -299,8 +304,14 @@ try {
           S.addEvent(db(), { itemId: o.id, kind: 'orphaned', message: `${o.id}: agent ${o.agent_id} did not survive the session` });
         }
       }
-      const srv = await server.start(dir, settings);
-      out({ missing: [], dir, server: srv, orphans: orphans.map((o) => o.id), settings });
+      register(home, dir);
+      const migration = migrate(home, dir);
+      if (opt['new-session']) {
+        S.setMeta(db(), 'sessionStartedAt', new Date().toISOString());
+        S.addEvent(db(), { kind: 'session', message: 'loop session started' });
+      }
+      const srv = await server.start(home, homeSettings(home, settings));
+      out({ missing: [], dir, home, server: srv, orphans: orphans.map((o) => o.id), migration, settings });
       break;
     }
     case 'schedule':
@@ -372,6 +383,29 @@ try {
       S.addEvent(db(), { kind: verb === 'pause' ? 'paused' : 'resumed', message: `loop ${verb}d` });
       out({ paused: verb === 'pause' });
       break;
+    case 'stop': {
+      const at = new Date().toISOString();
+      S.setMeta(db(), 'stoppedAt', at);
+      S.addEvent(db(), { kind: 'stopped', message: 'loop stopped' });
+      out(opt.json ? { stoppedAt: at } : `stopped ${at}`);
+      break;
+    }
+    case 'loops': {
+      const [sub, ref] = args;
+      if (sub === 'register') { const e = register(home, dir); opt.json ? out(e) : out(`registered ${e.name} (${e.id})`); break; }
+      if (sub === 'forget') { if (!ref) die('loops forget <id|path>'); const ok = forget(home, ref); opt.json ? out({ forgotten: ok }) : out(ok ? 'forgotten' : `no loop ${ref}`); break; }
+      if (sub) die('loops [--json] | loops register | loops forget <id|path>');
+      const rows = listLoops(home).map((e) => {
+        if (!existsSync(join(e.dir, 'state.db'))) return { ...e, running: false, stopped: false, paused: false, error: `no store at ${e.dir}` };
+        const ldb = S.openDb(join(e.dir, 'state.db'));
+        const meta = (k) => S.getMeta(ldb, k);
+        const row = { ...e, ...loopStatus({ sessionStartedAt: meta('sessionStartedAt'), nextTickAt: meta('nextTickAt'), stoppedAt: meta('stoppedAt'), lastTickAt: meta('lastTickAt') }), paused: meta('paused') === 'true' };
+        ldb.close();
+        return row;
+      });
+      opt.json ? out(rows) : out(rows.map((r) => `${r.name.padEnd(20)} ${r.error ? 'error' : r.running ? (r.paused ? 'paused' : 'running') : r.stopped ? 'stopped' : 'idle'}  ${r.workspace}`).join('\n') || '(none)');
+      break;
+    }
     case 'dispatch':
       if (!opt.agent) die('dispatch needs --agent');
       out(dispatch(db(), resolveId(args[0]), { agent: opt.agent, status: opt.status }));
@@ -397,9 +431,9 @@ try {
     }
     case 'server': {
       const [sub] = args;
-      if (sub === 'start') out(await server.start(dir, loopSettings(dir)));
-      else if (sub === 'stop') out(await server.stop(dir));
-      else if (sub === 'status') out(await server.status(dir));
+      if (sub === 'start') out(await server.start(home, homeSettings(home, loopSettings(dir))));
+      else if (sub === 'stop') out(await server.stop(home));
+      else if (sub === 'status') out(await server.status(home));
       else die('server start|stop|status');
       break;
     }
