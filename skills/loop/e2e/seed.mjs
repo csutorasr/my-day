@@ -1,16 +1,18 @@
-// An imaginary workspace for the dashboard: a .my-day folder with LOOP.md and a state.db filled
-// through the real DB layer, so every panel shows. Used by the e2e test (README screenshot) and
-// `npm run ui:demo`. Everything here is made up (a small web shop); never copy real work into it.
-// Times are relative to now so the "Today" activity filter keeps working.
+// An imaginary machine for the dashboard: a home (~/.my-day stand-in) with three registered loops,
+// each a workspace .my-day folder with LOOP.md and a state.db filled through the real DB layer.
+// `shop` shows every panel, `studio` is a second running loop, `archive` is stopped. Used by the
+// e2e test (README screenshots) and `npm run ui:demo`. Everything here is made up; never copy real
+// work into it. Times are relative to now so the "Today" activity filter keeps working.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as S from '../lib/db.mjs';
+import { register } from '../lib/home.mjs';
 
 const ago = (min) => new Date(Date.now() - min * 60_000).toISOString();
 const git = 'https://git.example.com/shop';
 const tracker = 'https://tracker.example.com/browse';
 
-export function seedDemo(dir) {
+function seedShop(dir) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'LOOP.md'), '---\nworkingHours: 08:00-19:00\nmaxAgents: 3\ntargetBranch: main\n---\n# Imaginary workspace\n');
   const db = S.openDb(join(dir, 'state.db'));
@@ -73,6 +75,54 @@ export function seedDemo(dir) {
 
   S.setMeta(db, 'lastTickAt', ago(4));
   S.setMeta(db, 'nextTickAt', new Date(Date.now() + 16 * 60_000).toISOString());
+  S.setMeta(db, 'sessionStartedAt', ago(240));
   db.close();
   return dir;
+}
+
+// A design-system workspace: one MR waiting on a question, one failed story and one review. Its ids
+// (mr-1, q-1, review-1) repeat shop's on purpose: the dashboard must keep them apart.
+function seedStudio(dir) {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'LOOP.md'), '---\nworkingHours: 09:00-17:00\nmaxAgents: 2\ntargetBranch: main\n---\n# Imaginary workspace\n');
+  const db = S.openDb(join(dir, 'state.db'));
+  const { id: tokens } = S.upsertItem(db, { type: 'story', ext: 'jira:UI-12', title: 'Dark mode tokens for the button set', url: `${tracker}/UI-12`, status: 'developing' });
+  S.fail(db, tokens, 'Visual regression tests fail on the focus ring');
+  const { id: icons } = S.upsertItem(db, {
+    type: 'mr', ext: 'gitlab:studio/ui!9', title: 'UI-14: rename the icon set', url: 'https://git.example.com/studio/ui/-/merge_requests/9',
+    status: 'in-review', repos: ['ui'], data: { iid: 9, project: 'studio/ui', target: 'main', pipeline: { status: 'success' }, approvedBy: [], verdict: 'wait', ticketKeys: ['UI-14'] },
+  });
+  S.ask(db, icons, 'Keep the old icon names as aliases for one release?');
+  S.upsertItem(db, { type: 'review', ext: 'gitlab:studio/ui!14', title: 'feat(icons): outline set v2 (UI-15)', url: 'https://git.example.com/studio/ui/-/merge_requests/14', data: { iid: 14, project: 'studio/ui' } });
+  S.addEvent(db, { itemId: tokens, kind: 'failed', message: `${tokens}: visual regression tests fail`, ts: ago(30) });
+  S.setMeta(db, 'lastTickAt', ago(2));
+  S.setMeta(db, 'nextTickAt', new Date(Date.now() + 18 * 60_000).toISOString());
+  S.setMeta(db, 'sessionStartedAt', ago(120));
+  db.close();
+  return dir;
+}
+
+// A finished engagement: the loop was stopped yesterday.
+function seedArchive(dir) {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'LOOP.md'), '---\nworkingHours: 08:00-16:00\n---\n# Imaginary workspace\n');
+  const db = S.openDb(join(dir, 'state.db'));
+  S.upsertItem(db, { type: 'bug', ext: 'jira:OLD-3', title: 'Export keeps the old logo', status: 'done' });
+  S.setMeta(db, 'sessionStartedAt', ago(60 * 30));
+  S.setMeta(db, 'nextTickAt', ago(60 * 26));
+  S.setMeta(db, 'stoppedAt', ago(60 * 26));
+  db.close();
+  return dir;
+}
+
+// `root` holds the workspaces and the home. `only` limits the seed to some loops (e.g. ['shop']).
+export function seedDemo(root, { only = ['shop', 'studio', 'archive'] } = {}) {
+  const home = join(root, 'home');
+  const seeders = { shop: seedShop, studio: seedStudio, archive: seedArchive };
+  const loops = {};
+  for (const name of only) {
+    const dir = seeders[name](join(root, name, '.my-day'));
+    loops[name] = register(home, dir).id;
+  }
+  return { home, loops };
 }

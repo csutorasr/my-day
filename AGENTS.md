@@ -5,11 +5,17 @@ Notes for coding agents working on this repo. Read `README.md` first.
 ## Layout
 
 - `skills/*/SKILL.md`: the plugin's skills. `skills/loop/bin/state.mjs` is the CLI the loop runs.
-- `skills/loop/lib`: state DB, config, forge and helpers. `skills/loop/server`: the dashboard server.
+- `skills/loop/templates/<profile>/`: a profile = `SETUP.md` (its interview) + the `.md` files it
+  writes; `templates/DREAM.md` is shared. A new kind of loop is a new profile folder, not new code.
+  `LOOP.md`'s `## Files` section is the manifest `config missing` checks.
+- `skills/loop/lib`: state DB, config, forge and helpers; `home.mjs` is the machine home
+  (`~/.my-day`, `MY_DAY_HOME`): loop registry, liveness, migration. `skills/loop/server`: the one
+  dashboard server per machine, reading every registered loop's `state.db`.
 - `skills/loop/ui`: the dashboard UI (React + Vite + Tailwind v4 + shadcn/ui on Base UI), an npm
   workspace. `src/components/ui` is shadcn's (add with `pnpm dlx shadcn@latest add <name>` run in
   `skills/loop/ui`); app components compose them. `skills/loop/test`: `node --test` suites.
-- `skills/loop/e2e`: Playwright test on an imaginary workspace (`seed.mjs`); writes the README screenshots.
+- `skills/loop/e2e`: Playwright test on imaginary workspaces under a temp home (`seed.mjs`: two
+  running loops, one stopped); writes the README screenshots.
 
 ## Rules
 
@@ -28,6 +34,7 @@ Notes for coding agents working on this repo. Read `README.md` first.
   (`skills/loop/e2e/seed.mjs`), starts the real server on it and captures the page in Chrome
   (set `PW_CHANNEL=` and run `npx playwright install chromium` to use Playwright's Chromium).
   Extend the seed when a new panel or state should show; never screenshot real workspace data.
+- Tests never touch the real `~/.my-day`: set `MY_DAY_HOME` to a temp dir.
 - The dashboard server never talks to a code host or tracker. Dashboard actions are recorded
   as events; the loop acts on them on its next tick.
 - Bump the version in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`
