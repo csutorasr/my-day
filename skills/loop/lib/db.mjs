@@ -1,7 +1,10 @@
 // State store for my-day. The only module that touches state.db.
 import { DatabaseSync } from 'node:sqlite';
 
+// The dev profile's item types (known to sync, gates and the dashboard). Other profiles may use any
+// lowercase slug (`request`, `1on1` …); the id prefix is the type.
 export const TYPES = ['bug', 'story', 'subtask', 'mr', 'review'];
+export const TYPE_RE = /^[a-z0-9][a-z0-9-]{0,23}$/;
 // Terminal statuses: no further work, kept only for history. The dashboard reads this list from /api/state.
 // A review's `covered` status (others already handled it) is deliberately open: sync keeps re-checking it.
 export const CLOSED_STATUSES = ['merged', 'closed', 'done', 'skipped', 'ignored'];
@@ -94,7 +97,7 @@ function event(db, itemId, kind, message, data, ts = now()) {
 const toRepos = (r) => (Array.isArray(r) ? r : String(r).split(',').map((s) => s.trim()).filter(Boolean));
 
 export function upsertItem(db, { type, ext, title, url, status, parent, repos, data }) {
-  if (!TYPES.includes(type)) throw new Error(`unknown type ${type} (expected ${TYPES.join('|')})`);
+  if (!TYPE_RE.test(type ?? '')) throw new Error(`unknown type ${type} (a lowercase slug, e.g. ${TYPES.join('|')})`);
   if (!ext) throw new Error('ext key required, e.g. jira:ABC-123 or gitlab:group/repo!12');
   return tx(db, () => {
     const existing = db.prepare('SELECT * FROM items WHERE ext_key = ?').get(ext);
