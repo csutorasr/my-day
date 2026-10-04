@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // my-day state CLI — the only door to .my-day/state.db. Run with no args for help.
 import { existsSync, mkdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import * as S from '../lib/db.mjs';
 import { resolveRange } from '../lib/range.mjs';
-import { OPTIONAL, findMissing, requiredFiles, readConfig, loopSettings } from '../lib/config.mjs';
+import { OPTIONAL, findMissing, requiredFiles, requiredSources, readConfig, loopSettings } from '../lib/config.mjs';
 import * as server from '../lib/serverctl.mjs';
 import { inWorkingHours, schedule } from '../lib/schedule.mjs';
 import { sync } from '../lib/sync.mjs';
@@ -38,11 +39,15 @@ Items      upsert --type bug|story|subtask|mr|review --ext <jira:KEY|gitlab:path
            attempt <id>              (attempts++)
            fail <id> --reason "…" | unfail <id>
            link <id> --kind mr|pipeline|jira|spec|other --url <url> [--label]
-Questions  ask <id|-> "text" | answer <q-n> "text" | decline <q-n> | questions [--status open]
+Questions  ask <id|-> "text" [--draft '<json>'|-]   a draft = an outward write to approve: {action, target, body}
+           answer <q-n> "text" [--body "…"] | decline <q-n> | questions [--status open]
+           wrote <q-n> [--url u]      the approved draft was written (tick stops listing it)
+Sources    source <name> ok|missing|error ["message"] | sources [--json]   health of LOOP.md \`requires\`
 Events     event <id|-> <kind> "message" | events [range] [--item <id>] [--limit n]
 Summary    summary [--today|--yesterday|--since D|--from D --to D] | prune [--days n]
 Dream      dream-data [--since <D|iso>]  history bundle for my-day:dream (default: since lastDreamAt, else 7 days)
            dream-done [--report <file>] "summary"   record lastDreamAt, log dream + notify events
+           schedule-done <name> ["summary"]   a <name>Schedule run happened (records last<Name>At)
 Reviews    review done|skip <id>
 Config     config missing | config show <NAME> | config all | config settings | config dir
 Loops      loops [--json]             every loop on this machine (~/.my-day/loops) with running / stopped
@@ -64,6 +69,7 @@ const { values: opt, positionals: pos } = parseArgs({
     json: { type: 'boolean' }, interval: { type: 'string' }, once: { type: 'boolean' },
     chain: { type: 'string' }, task: { type: 'string' },
     agent: { type: 'string' }, result: { type: 'string' }, report: { type: 'string' }, 'new-session': { type: 'boolean' },
+    draft: { type: 'string' }, body: { type: 'string' },
   },
 });
 
@@ -86,6 +92,21 @@ const resolveId = (ref) => {
   return it.id;
 };
 const range = () => resolveRange(opt);
+const readStdin = async () => { const c = []; for await (const x of process.stdin) c.push(x); return Buffer.concat(c).toString('utf8'); };
+// meta last<Name>At of a <name>Schedule (dream keeps lastDreamAt).
+const lastKey = (name) => `last${name[0].toUpperCase()}${name.slice(1)}At`;
+const lastAt = (name) => S.getMeta(db(), lastKey(name));
+const hasBin = (bin) => spawnSync('sh', ['-c', 'command -v "$0" >/dev/null 2>&1', bin]).status === 0;
+
+// Required sources (LOOP.md `requires`) with their last reported health.
+function sourceHealth(settings) {
+  const rows = new Map(S.listSources(db()).map((r) => [r.name, r]));
+  const required = requiredSources(settings);
+  return {
+    down: required.filter((n) => rows.get(n) && rows.get(n).status !== 'ok').map((n) => ({ name: n, status: rows.get(n).status, message: rows.get(n).message })),
+    unchecked: required.filter((n) => !rows.has(n)),
+  };
+}
 const pad = (n) => String(n).padStart(2, '0');
 const localDay = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const localTime = (iso) => { const d = new Date(iso); return `${localDay(iso)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
@@ -238,20 +259,38 @@ try {
       break;
     case 'ask': {
       const ref = itemRef(args[0]);
-      out(S.ask(db(), ref && resolveId(ref), args.slice(1).join(' ')));
+      // A draft's body may hold anything: pass it on stdin (`--draft -`) rather than on a command line.
+      const draft = opt.draft === undefined ? undefined : JSON.parse(opt.draft === '-' ? await readStdin() : opt.draft);
+      out(S.ask(db(), ref && resolveId(ref), args.slice(1).join(' '), { draft }));
       break;
     }
     case 'answer':
-      S.answer(db(), args[0], args.slice(1).join(' '));
+      S.answer(db(), args[0], args.slice(1).join(' '), { body: opt.body });
       out('ok');
       break;
+    case 'wrote':
+      S.markWritten(db(), args[0], { url: opt.url });
+      out('ok');
+      break;
+    case 'source': {
+      const [name, status, ...msg] = args;
+      if (!name || !status) die('source <name> ok|missing|error ["message"]');
+      out(S.setSource(db(), name, status, msg.join(' ')));
+      break;
+    }
+    case 'sources': {
+      const rows = S.listSources(db());
+      opt.json ? out(rows) : out(rows.map((r) => `${r.name.padEnd(24)} ${r.status.padEnd(8)} ${localTime(r.checked_at)}${r.message ? `  ${r.message}` : ''}`).join('\n') || '(none)');
+      break;
+    }
     case 'decline':
       S.decline(db(), args[0]);
       out('ok');
       break;
     case 'questions': {
       const qs = S.listQuestions(db(), { status: opt.status ?? 'open' });
-      opt.json ? out(qs) : out(qs.map((q) => `${q.id}${q.item_id ? ` (${q.item_id})` : ''} ${q.text}`).join('\n') || '(none)');
+      const tag = (q) => (q.draft ? ` [draft ${q.draft.action}${q.draft.target ? ` → ${q.draft.target}` : ''}]` : '');
+      opt.json ? out(qs) : out(qs.map((q) => `${q.id}${q.item_id ? ` (${q.item_id})` : ''}${tag(q)} ${q.text}`).join('\n') || '(none)');
       break;
     }
     case 'event': {
@@ -290,6 +329,15 @@ try {
       out(opt.json ? { lastDreamAt: at } : `ok ${at}`);
       break;
     }
+    case 'schedule-done': {
+      const [name, ...rest] = args;
+      if (!/^[a-z][A-Za-z0-9]*$/.test(name ?? '')) die('schedule-done <name> ["summary"]   (name of a <name>Schedule setting)');
+      const at = new Date().toISOString();
+      S.setMeta(db(), lastKey(name), at);
+      S.addEvent(db(), { kind: 'scheduled', message: `${name}: ${rest.join(' ') || 'done'}` });
+      out(opt.json ? { [lastKey(name)]: at } : `ok ${at}`);
+      break;
+    }
     case 'review': {
       const [action, ref] = args;
       if (!['done', 'skip'].includes(action)) die('review done|skip <id>');
@@ -318,12 +366,20 @@ try {
         S.setMeta(db(), 'sessionStartedAt', new Date().toISOString());
         S.addEvent(db(), { kind: 'session', message: 'loop session started' });
       }
+      // CLIs are checked here; MCP servers are only visible to the session, which reports them.
+      const required = requiredSources(settings);
+      const cli = {};
+      for (const name of required.filter((n) => n.startsWith('cli:'))) {
+        cli[name] = hasBin(name.slice(4)) ? 'ok' : 'missing';
+        S.setSource(db(), name, cli[name], cli[name] === 'missing' ? `${name.slice(4)} not on PATH` : undefined);
+      }
+      const sources = { cli, checkMcp: required.filter((n) => n.startsWith('mcp:')) };
       const srv = await server.start(home, homeSettings(home, settings));
-      out({ missing: [], dir, home, server: srv, orphans: orphans.map((o) => o.id), migration, settings });
+      out({ missing: [], dir, home, server: srv, orphans: orphans.map((o) => o.id), migration, sources, settings });
       break;
     }
     case 'schedule':
-      out(schedule(loopSettings(dir), S.listItems(db()).filter((i) => i.agent_id).length, new Date(), { lastDreamAt: S.getMeta(db(), 'lastDreamAt') }));
+      out(schedule(loopSettings(dir), S.listItems(db()).filter((i) => i.agent_id).length, new Date(), { lastDreamAt: S.getMeta(db(), 'lastDreamAt'), lastAt }));
       break;
     case 'sync':
       out(sync(db(), loopSettings(dir)));
@@ -346,7 +402,7 @@ try {
         if (v !== 'wait') (byVerdict[v] ??= []).push(m.id);
       }
       const now = new Date();
-      const sched = schedule(settings, items.filter((i) => i.agent_id).length, now, { lastDreamAt: S.getMeta(db(), 'lastDreamAt') });
+      const sched = schedule(settings, items.filter((i) => i.agent_id).length, now, { lastDreamAt: S.getMeta(db(), 'lastDreamAt'), lastAt });
       // Pause (dashboard button or `state.mjs pause`): refresh continues, nothing is dispatched.
       sched.paused = S.getMeta(db(), 'paused') === 'true';
       if (sched.paused) sched.freeSlots = 0;
@@ -368,6 +424,9 @@ try {
         running: items.filter((i) => i.agent_id).map((i) => `${i.id}:${i.agent_id}`),
         reviewsPending: open.filter((i) => i.type === 'review' && i.status !== 'covered').length,
         openQuestions: S.listQuestions(db(), { status: 'open' }).map((q) => q.id),
+        // Approved drafts not written yet (WRITES.md): write them, then `wrote <q>`.
+        approvedDrafts: S.approvedDrafts(db()).map((q) => q.id),
+        sources: sourceHealth(settings),
         failed: items.filter((i) => i.failed).map((i) => i.id),
       });
       break;
@@ -431,7 +490,7 @@ try {
       if (!opt.kind || !opt.chain) die('run <id> --kind <k> --chain <repo>=<worktree>[,…] [--status s] < task (or --task "…")');
       // The task normally comes on stdin, so ticket text never passes through a shell command line.
       let task = opt.task;
-      if (task === undefined) { const c = []; for await (const x of process.stdin) c.push(x); task = Buffer.concat(c).toString('utf8').trim(); }
+      if (task === undefined) task = (await readStdin()).trim();
       const steps = opt.chain.split(',').map((p) => {
         const eq = p.indexOf('=');
         if (eq < 1) die(`expected <repo>=<worktree>, got ${p}`);
@@ -458,7 +517,7 @@ try {
       break;
     case 'reconcile': {
       let raw = opt.result;
-      if (raw === undefined) { const c = []; for await (const x of process.stdin) c.push(x); raw = Buffer.concat(c).toString('utf8'); }
+      if (raw === undefined) raw = await readStdin();
       out(reconcile(db(), resolveId(args[0]), raw, loopSettings(dir)));
       break;
     }

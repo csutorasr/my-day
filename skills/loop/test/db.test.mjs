@@ -168,3 +168,67 @@ test('upsert accepts any slug type and numbers it by type', () => {
   assert.throws(() => S.upsertItem(db, { type: 'Bad Type', ext: 'x:1' }), /unknown type/);
   assert.throws(() => S.upsertItem(db, { ext: 'x:2' }), /unknown type/);
 });
+
+test('a draft question carries its write; an approval may edit the body; wrote closes it', () => {
+  const { db } = fresh();
+  const { id } = S.upsertItem(db, { type: 'report', ext: 'status:2026-w40' });
+  assert.throws(() => S.ask(db, id, 'Post it?', { draft: { body: 'x' } }), /draft needs action/);
+  assert.throws(() => S.ask(db, id, 'Post it?', { draft: { action: 'slack: post channel' } }), /draft needs .*body/);
+  const q = S.ask(db, id, 'Post the weekly status?', { draft: { action: 'slack: post channel', target: '#product', body: 'Shipped: search.' } });
+  const plain = S.ask(db, id, 'Which channel?');
+  const [d, p] = S.listQuestions(db, { status: 'open' });
+  assert.deepEqual(d.draft, { action: 'slack: post channel', target: '#product', body: 'Shipped: search.' });
+  assert.equal(p.draft, null);
+  assert.deepEqual(S.approvedDrafts(db), []);
+  S.answer(db, q, 'approved', { body: 'Shipped: search and filters.' });
+  S.answer(db, plain, '#product', { body: 'ignored' });
+  const after = S.listQuestions(db, { itemId: id });
+  assert.deepEqual(after[0].draft, { action: 'slack: post channel', target: '#product', body: 'Shipped: search and filters.', edited: true });
+  assert.equal(after[1].draft, null);
+  assert.deepEqual(S.approvedDrafts(db).map((x) => x.id), [q]);
+  S.markWritten(db, q, { url: 'https://chat.example.com/p/1' });
+  assert.deepEqual(S.approvedDrafts(db), []);
+  assert.ok(S.listQuestions(db, { itemId: id })[0].written_at);
+  assert.match(S.listEvents(db, { itemId: id }).at(-1).message, /q-1 written: slack: post channel → #product https:\/\/chat\.example\.com\/p\/1/);
+  assert.throws(() => S.markWritten(db, plain), /not a draft/);
+});
+
+test('an approval with the unchanged body is not marked edited; a declined draft is never due', () => {
+  const { db } = fresh();
+  const q1 = S.ask(db, null, 'Send?', { draft: { action: 'jira: comment', body: 'Same' } });
+  const q2 = S.ask(db, null, 'Send?', { draft: { action: 'jira: comment', body: 'No' } });
+  S.answer(db, q1, 'approved', { body: 'Same' });
+  S.decline(db, q2, 'not now');
+  assert.equal(S.listQuestions(db, {})[0].draft.edited, undefined);
+  assert.deepEqual(S.approvedDrafts(db).map((x) => x.id), [q1]);
+});
+
+test('sources log an event only when their status changes', () => {
+  const { db } = fresh();
+  assert.throws(() => S.setSource(db, 'mcp:slack', 'broken'), /status/);
+  assert.equal(S.setSource(db, 'mcp:slack', 'ok').changed, true);
+  assert.equal(S.setSource(db, 'mcp:slack', 'error', 'auth expired').changed, true);
+  assert.equal(S.setSource(db, 'mcp:slack', 'error', 'auth expired').changed, false);
+  assert.equal(S.setSource(db, 'mcp:slack', 'ok').changed, true);
+  assert.equal(S.setSource(db, 'cli:glab', 'missing').changed, true);
+  const kinds = S.listEvents(db).map((e) => `${e.kind}: ${e.message}`);
+  assert.deepEqual(kinds, ['source-down: mcp:slack error: auth expired', 'source-ok: mcp:slack is back', 'source-down: cli:glab missing']);
+  assert.deepEqual(S.listSources(db).map(({ name, status, message }) => ({ name, status, message })), [
+    { name: 'cli:glab', status: 'missing', message: null },
+    { name: 'mcp:slack', status: 'ok', message: null },
+  ]);
+});
+
+test('migration 3 upgrades a v2 database: old questions have no draft', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'myday-db-'));
+  const file = join(dir, 'state.db');
+  const old = new DatabaseSync(file);
+  old.exec(S.MIGRATIONS[0]);
+  old.exec(S.MIGRATIONS[1]);
+  old.exec('PRAGMA user_version = 2');
+  old.prepare("INSERT INTO questions(id, text, created_at) VALUES ('q-1', 'Old?', '2026-01-01')").run();
+  old.close();
+  const db = S.openDb(file);
+  assert.equal(S.listQuestions(db)[0].draft, null);
+  assert.deepEqual(S.listSources(db), []);
+});

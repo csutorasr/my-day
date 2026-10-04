@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveRange } from '../lib/range.mjs';
-import { REQUIRED, LEGACY_REQUIRED, DEFAULTS, findMissing, requiredFiles, readConfig, loopSettings } from '../lib/config.mjs';
+import { REQUIRED, LEGACY_REQUIRED, DEFAULTS, OPTIONAL, findMissing, requiredFiles, requiredSources, readConfig, loopSettings } from '../lib/config.mjs';
 
 test('range to is inclusive of the whole local day', () => {
   const r = resolveRange({ from: '2026-09-28', to: '2026-09-28' });
@@ -109,6 +109,18 @@ test('the dev-bundle profile: same manifest as dev, runs workers as claude -p', 
   assert.equal(s.runTimeoutMinutes, 90);
   assert.match(readFileSync(new URL('../templates/dev-bundle/SETUP.md', import.meta.url), 'utf8'), /templates\/dev\/SETUP\.md/);
   assert.match(readFileSync(new URL('../templates/dev-bundle/DEVELOP.md', import.meta.url), 'utf8'), /## Cross-repo order/);
+});
+
+test('requires: a comma list of sources, brackets optional; absent → none; WRITES is optional', () => {
+  assert.deepEqual(requiredSources({}), []);
+  assert.deepEqual(requiredSources({ requires: '' }), []);
+  assert.deepEqual(requiredSources({ requires: 'mcp:slack' }), ['mcp:slack']);
+  assert.deepEqual(requiredSources({ requires: '[mcp:atlassian,  mcp:slack , cli:glab, mcp:slack]' }), ['mcp:atlassian', 'mcp:slack', 'cli:glab']);
+  const d = mkdtempSync(join(tmpdir(), 'myday-req-'));
+  writeFileSync(join(d, 'LOOP.md'), '---\nrequires: [mcp:atlassian, cli:gh]   # sources\n---\n');
+  assert.deepEqual(requiredSources(loopSettings(d)), ['mcp:atlassian', 'cli:gh']);
+  assert.ok(OPTIONAL.includes('WRITES'));
+  assert.ok(!requiredFiles(d).includes('WRITES'));
 });
 
 test('runner defaults to agent', () => {

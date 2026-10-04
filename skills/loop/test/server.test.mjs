@@ -188,6 +188,34 @@ test('declining from the dashboard keeps the optional reason for the loop', asyn
   assert.equal(S.listQuestions(db, { status: 'declined' }).find((q) => q.id === bare).answer, null);
 });
 
+test('a draft is shown with its write and approved with the body as edited on the dashboard', async () => {
+  const qid = S.ask(db, reviewId, 'Post the release note?', { draft: { action: 'slack: post channel', target: '#release', body: 'v2 is out.' } });
+  assert.deepEqual((await stateA()).questions.find((q) => q.id === qid).draft, { action: 'slack: post channel', target: '#release', body: 'v2 is out.' });
+  // An approval must not send an emptied draft.
+  assert.equal((await post(`/api/loops/${idA}/questions/${qid}/answer`, { text: 'approved', body: '  ' })).status, 400);
+  assert.equal(S.listQuestions(db, { status: 'open' }).some((q) => q.id === qid), true);
+  assert.equal((await post(`/api/loops/${idA}/questions/${qid}/answer`, { text: 'approved', body: 'v2 is out, with dark mode.' })).status, 200);
+  const q = S.listQuestions(db, { status: 'answered' }).find((x) => x.id === qid);
+  assert.deepEqual(q.draft, { action: 'slack: post channel', target: '#release', body: 'v2 is out, with dark mode.', edited: true });
+  const ev = S.listEvents(db, { limit: 5 }).find((e) => e.kind === 'dashboard-answer' && e.data.questionId === qid);
+  assert.equal(ev.data.draft.body, 'v2 is out, with dark mode.');
+  assert.match(ev.message, /approved on dashboard \(edited\)/);
+  // A plain question ignores a body.
+  const plain = S.ask(db, reviewId, 'Which channel?');
+  assert.equal((await post(`/api/loops/${idA}/questions/${plain}/answer`, { text: '#release', body: 'x' })).status, 200);
+  assert.equal(S.listQuestions(db, { status: 'answered' }).find((x) => x.id === plain).draft, null);
+});
+
+test('state lists the required sources with their health; unreported ones are unchecked', async () => {
+  writeFileSync(join(wsA, 'LOOP.md'), '---\nrequires: mcp:atlassian, mcp:slack\n---\n');
+  S.setSource(db, 'mcp:slack', 'error', 'auth expired');
+  S.setSource(db, 'mcp:figma', 'missing'); // not required: not shown
+  assert.deepEqual((await stateA()).sources.map(({ name, status, message }) => ({ name, status, message })), [
+    { name: 'mcp:atlassian', status: 'unchecked', message: null },
+    { name: 'mcp:slack', status: 'error', message: 'auth expired' },
+  ]);
+});
+
 test('quick-action requests are validated and logged, never executed', async () => {
   const bad = await fetch(`${loopBase}/items/${reviewId}/request`, { method: 'POST', headers: { origin: base }, body: JSON.stringify({ action: 'rm -rf' }) });
   assert.equal(bad.status, 400);
