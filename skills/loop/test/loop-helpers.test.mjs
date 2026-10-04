@@ -199,6 +199,23 @@ test('dream: never due outside working hours', () => {
   assert.equal(dreamDue({ ...s, dreamSchedule: 'Sat 10:00' }, null, new Date(2026, 9, 3, 11, 0)), false);
 });
 
+import { dueSchedules } from '../lib/schedule.mjs';
+
+test('schedules: any <name>Schedule key is due once its slot passed since last<Name>At', () => {
+  const s = { ...settings, dreamSchedule: 'Fri 17:00', statusSchedule: 'Fri 14:00', digestSchedule: 'Mon 09:00', junkSchedule: 'soon', emptySchedule: '' };
+  const friAfternoon = new Date(2026, 9, 2, 14, 30);
+  const last = {};
+  const lastAt = (name) => last[name] ?? null;
+  // dream keeps its own flag; junk and empty specs are never due. Monday's digest has no earlier run → due.
+  assert.deepEqual(dueSchedules(s, lastAt, friAfternoon), ['status', 'digest']);
+  last.status = new Date(2026, 9, 2, 14, 10).toISOString();
+  last.digest = new Date(2026, 8, 28, 9, 5).toISOString();
+  assert.deepEqual(dueSchedules(s, lastAt, friAfternoon), []);
+  assert.deepEqual(dueSchedules(s, () => null, new Date(2026, 9, 3, 11, 0)), []); // Sat: outside hours
+  assert.deepEqual(schedule(s, 0, friAfternoon, { lastAt: () => null }).due, ['status', 'digest']);
+  assert.deepEqual(schedule(settings, 0, friAfternoon).due, []);
+});
+
 test('sync with forge none does nothing', () => {
   const db = S.openDb(join(mkdtempSync(join(tmpdir(), 'myday-none-')), 'state.db'));
   assert.deepEqual(sync(db, { forge: 'none' }), { skipped: 'forge: none' });

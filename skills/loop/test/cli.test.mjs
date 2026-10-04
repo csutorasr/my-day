@@ -128,6 +128,45 @@ test('tick reports dashboard answers and requests once, records the next tick an
   db.close();
 });
 
+test('drafts, sources and schedules through the CLI and tick', async () => {
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const d = join(mkdtempSync(join(tmpdir(), 'myday-cli-pm-')), '.my-day');
+  mkdirSync(d, { recursive: true });
+  // Every day, all day, so the status slot (earlier today or yesterday) is always due.
+  writeFileSync(join(d, 'LOOP.md'), '---\nforge: none\nworkingHours: 00:00-24:00\nworkingDays: Sun-Sat\nrequires: mcp:atlassian, mcp:slack\nstatusSchedule: Sun-Sat 00:00\n---\n# Loop\n## Files\n');
+  const env = { ...process.env, MY_DAY_DIR: d };
+  const r = (...a) => execFileSync(process.execPath, [CLI, ...a], { env, encoding: 'utf8' }).trim();
+  const tick = () => JSON.parse(r('tick'));
+  r('upsert', '--type', 'report', '--ext', 'status:w40', '--title', 'Week 40');
+
+  // A draft comes on stdin (its body may hold anything); bad drafts are refused.
+  const draft = { action: 'slack: post channel', target: '#product', body: 'Shipped: "search" & filters.' };
+  const q = execFileSync(process.execPath, [CLI, 'ask', 'report-1', 'Post the weekly status?', '--draft', '-'], { env, encoding: 'utf8', input: JSON.stringify(draft) }).trim();
+  assert.match(r('questions'), /q-1 \(report-1\) \[draft slack: post channel → #product\] Post the weekly status\?/);
+  assert.equal(spawnSync(process.execPath, [CLI, 'ask', '-', 'x', '--draft', '{"body":"b"}'], { env, encoding: 'utf8' }).status, 1);
+  assert.deepEqual(tick().approvedDrafts, []);
+  r('answer', q, 'approved', '--body', 'Shipped: search, filters and saved views.');
+  assert.deepEqual(tick().approvedDrafts, [q]);
+  assert.deepEqual(tick().approvedDrafts, [q]); // still there until written
+  assert.equal(JSON.parse(r('questions', '--status', 'answered', '--json'))[0].draft.body, 'Shipped: search, filters and saved views.');
+  r('wrote', q, '--url', 'https://chat.example.com/p/1');
+  assert.deepEqual(tick().approvedDrafts, []);
+
+  // Sources: only the required ones count; unreported ones are unchecked.
+  assert.deepEqual(tick().sources, { down: [], unchecked: ['mcp:atlassian', 'mcp:slack'] });
+  r('source', 'mcp:atlassian', 'ok');
+  r('source', 'mcp:slack', 'error', 'auth', 'expired');
+  r('source', 'mcp:figma', 'missing');
+  assert.deepEqual(tick().sources, { down: [{ name: 'mcp:slack', status: 'error', message: 'auth expired' }], unchecked: [] });
+  assert.equal(spawnSync(process.execPath, [CLI, 'source', 'mcp:slack', 'broken'], { env, encoding: 'utf8' }).status, 1);
+
+  // Generic schedules: due until schedule-done records the run.
+  assert.deepEqual(tick().schedule.due, ['status']);
+  r('schedule-done', 'status', 'posted week 40');
+  assert.deepEqual(tick().schedule.due, []);
+  assert.match(r('events'), /scheduled: status: posted week 40/);
+});
+
 test('watch-dashboard streams only dashboard events after the tick cursor', () => {
   run('event', 'bug-1', 'note', 'not a dashboard event');
   run('event', 'bug-1', 'dashboard-request', 'bug-1: elaborate requested on dashboard');
@@ -186,7 +225,7 @@ test('bootstrap --new-session clears subagent orphans but keeps claude -p runs',
   mkdirSync(d, { recursive: true });
   const { createServer } = await import('node:net');
   const port = await new Promise((ok) => { const srv = createServer().listen(0, '127.0.0.1', () => { const p = srv.address().port; srv.close(() => ok(p)); }); });
-  writeFileSync(join(d, 'LOOP.md'), `---\nport: ${port}\n---\n# Loop\n## Files\n`);
+  writeFileSync(join(d, 'LOOP.md'), `---\nport: ${port}\nrequires: cli:node, cli:no-such-bin-xyz, mcp:slack\n---\n# Loop\n## Files\n`);
   const r = (...a) => execFileSync(process.execPath, [CLI, ...a], { env: { ...process.env, MY_DAY_DIR: d }, encoding: 'utf8' }).trim();
   r('upsert', '--type', 'bug', '--ext', 'jira:O-1');
   r('upsert', '--type', 'bug', '--ext', 'jira:O-2');
@@ -197,11 +236,15 @@ test('bootstrap --new-session clears subagent orphans but keeps claude -p runs',
   mkdirSync(join(d, 'runs'), { recursive: true });
   writeFileSync(join(d, 'runs', 'bug-2-1.json'), JSON.stringify({ id: 'bug-2-1', item: 'bug-2', status: 'running', startedAt: new Date().toISOString(), steps: [] }));
   let orphans;
+  let sources;
   try {
-    ({ orphans } = JSON.parse(r('bootstrap', '--new-session')));
+    ({ orphans, sources } = JSON.parse(r('bootstrap', '--new-session')));
   } finally {
     r('server', 'stop');
   }
+  // CLIs are checked here; MCP servers only the session can see.
+  assert.deepEqual(sources, { cli: { 'cli:node': 'ok', 'cli:no-such-bin-xyz': 'missing' }, checkMcp: ['mcp:slack'] });
+  assert.match(r('sources'), /cli:no-such-bin-xyz\s+missing/);
   // bug-3's chain file is gone: nothing will ever collect it, so it is an orphan too.
   assert.deepEqual(orphans, ['bug-1', 'bug-3']);
   assert.equal(JSON.parse(r('get', 'bug-1')).agent_id, null);

@@ -6,7 +6,7 @@ import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import * as S from '../lib/db.mjs';
-import { DEFAULTS, loopSettings } from '../lib/config.mjs';
+import { DEFAULTS, loopSettings, requiredSources } from '../lib/config.mjs';
 import { homeDir, homeSettings, listLoops, loopStatus } from '../lib/home.mjs';
 import { listChains } from '../lib/runs.mjs';
 import { resolveRange } from '../lib/range.mjs';
@@ -28,6 +28,7 @@ const NOTIFY = {
   merged: 'Merged',
   failed: 'Needs attention',
   escalated: 'Escalated',
+  'source-down': 'Source down',
   notify: 'my-day',
 };
 
@@ -140,6 +141,11 @@ function stateOf(l) {
     reviews: items.filter(openReview),
     failed: items.filter((i) => i.failed).map(withHint),
     questions: S.listQuestions(db, { status: 'open' }).map((q) => ({ ...q, item: ref(byId.get(q.item_id)) })),
+    // The sources LOOP.md requires, with the health the loop last reported (never probed from here).
+    sources: (() => {
+      const rows = new Map(S.listSources(db).map((r) => [r.name, r]));
+      return requiredSources(conf).map((name) => rows.get(name) ?? { name, status: 'unchecked', message: null, checked_at: null });
+    })(),
     // claude -p chains (runner: claude-p) that run now or ended today; process details stay local.
     runs: listChains(l.dir)
       .filter((c) => c.status === 'running' || (c.endedAt ?? '') >= startOfToday())
@@ -202,11 +208,17 @@ async function loopAction(req, res, db, rest) {
     const q = S.listQuestions(db, { status: 'open' }).find((x) => x.id === qa[1]);
     if (!q) return send(res, 404, { error: `no open question ${qa[1]}` });
     // Answer text is required; a decline may carry an optional reason.
-    const text = String((await body(req)).text ?? '').trim().slice(0, 2000);
+    const payload = await body(req);
+    const text = String(payload.text ?? '').trim().slice(0, 2000);
     if (qa[2] === 'answer' && !text) return send(res, 400, { error: 'answer text required' });
-    if (qa[2] === 'answer') S.answer(db, q.id, text); else S.decline(db, q.id, text);
-    const what = qa[2] === 'answer' ? `answered on dashboard: ${text}` : `declined on dashboard${text ? `: ${text}` : ''}`;
-    S.addEvent(db, { itemId: q.item_id, kind: 'dashboard-answer', message: `${q.id} ${what}`, data: { questionId: q.id, status: qa[2] === 'answer' ? 'answered' : 'declined', text } });
+    // A draft's approval carries its body as edited on the dashboard; it must not be emptied.
+    const draftBody = q.draft && payload.body !== undefined ? String(payload.body).slice(0, 20000) : undefined;
+    if (qa[2] === 'answer' && draftBody !== undefined && !draftBody.trim()) return send(res, 400, { error: 'draft body required' });
+    const closed = qa[2] === 'answer' ? S.answer(db, q.id, text, { body: draftBody }) : S.decline(db, q.id, text);
+    const what = qa[2] === 'answer'
+      ? (q.draft ? `approved on dashboard${closed.draft.edited ? ' (edited)' : ''}` : `answered on dashboard: ${text}`)
+      : `declined on dashboard${text ? `: ${text}` : ''}`;
+    S.addEvent(db, { itemId: q.item_id, kind: 'dashboard-answer', message: `${q.id} ${what}`, data: { questionId: q.id, status: qa[2] === 'answer' ? 'answered' : 'declined', text, ...(closed.draft ? { draft: closed.draft } : {}) } });
     return done(res);
   }
   const rq = /^\/items\/([\w-]+)\/request$/.exec(rest);

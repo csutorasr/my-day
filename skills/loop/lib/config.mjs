@@ -20,7 +20,8 @@ export const LEGACY_REQUIRED = [
 export const REQUIRED = LEGACY_REQUIRED;
 
 // Optional files: read when present; the skill that uses them falls back to its template.
-export const OPTIONAL = ['DREAM'];
+// WRITES.md (approve-before-write policy): without it every outward action is `auto`, as before.
+export const OPTIONAL = ['DREAM', 'WRITES'];
 
 export const DEFAULTS = {
   port: 4711,
@@ -94,6 +95,13 @@ export function parseFrontmatter(text) {
     if (kv && kv[2] !== '' && !kv[2].startsWith('#')) out[kv[1]] = coerce(kv[2]);
   }
   return out;
+}
+
+// LOOP.md `requires: mcp:atlassian, mcp:slack, cli:glab` (brackets optional): the sources the loop
+// cannot work without. Unique, in order.
+export function requiredSources(settings) {
+  const raw = String(settings.requires ?? '').trim().replace(/^\[|\]$/g, '');
+  return [...new Set(raw.split(',').map((s) => s.trim()).filter(Boolean))];
 }
 
 export function loopSettings(dir) {

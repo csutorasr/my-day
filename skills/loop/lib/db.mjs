@@ -43,7 +43,13 @@ export const MIGRATIONS = [
    CREATE TABLE push_subscriptions (endpoint TEXT PRIMARY KEY, json TEXT NOT NULL, created_at TEXT NOT NULL);`,
   // Loop-level key/value facts that belong to no item (e.g. lastDreamAt).
   `CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);`,
+  // A question may be a draft of an outward write (WRITES.md `ask`): {action, target, body} as JSON,
+  // written_at once the loop performed it. Sources: health of the MCP servers / CLIs LOOP.md requires.
+  `ALTER TABLE questions ADD COLUMN draft TEXT;
+   ALTER TABLE questions ADD COLUMN written_at TEXT;
+   CREATE TABLE sources (name TEXT PRIMARY KEY, status TEXT NOT NULL, message TEXT, checked_at TEXT NOT NULL);`,
 ];
+export const SOURCE_STATUSES = ['ok', 'missing', 'error'];
 
 const now = () => new Date().toISOString();
 
@@ -202,24 +208,41 @@ export function addLink(db, id, { kind, url, label }) {
     .run(id, kind, url, label ?? null);
 }
 
-export function ask(db, itemId, text) {
+function checkDraft(draft) {
+  if (typeof draft?.action !== 'string' || !draft.action.trim()) throw new Error('draft needs action ("<source>: <verb>", e.g. "slack: post channel")');
+  if (typeof draft.body !== 'string' || !draft.body.trim()) throw new Error('draft needs a non-empty body');
+  if (draft.target !== undefined && typeof draft.target !== 'string') throw new Error('draft target must be a string');
+  return { action: draft.action, ...(draft.target ? { target: draft.target } : {}), body: draft.body };
+}
+
+// `draft` makes the question an approval of an outward write (WRITES.md `ask`).
+export function ask(db, itemId, text, { draft } = {}) {
+  const d = draft === undefined ? null : checkDraft(draft);
   return tx(db, () => {
     if (itemId) mustGet(db, itemId);
     const id = nextId(db, 'question');
-    db.prepare('INSERT INTO questions(id, item_id, text, created_at) VALUES (?, ?, ?, ?)').run(id, itemId ?? null, text, now());
-    event(db, itemId, 'question', `${id}: ${text}`, { questionId: id });
+    db.prepare('INSERT INTO questions(id, item_id, text, created_at, draft) VALUES (?, ?, ?, ?, ?)').run(id, itemId ?? null, text, now(), d && JSON.stringify(d));
+    event(db, itemId, 'question', `${id}: ${text}`, { questionId: id, ...(d ? { draft: d } : {}) });
     return id;
   });
 }
 
-function closeQuestion(db, qid, status, answer) {
-  const q = db.prepare('SELECT * FROM questions WHERE id = ?').get(qid);
-  if (!q) throw new Error(`no question ${qid}`);
-  db.prepare('UPDATE questions SET status = ?, answer = ?, answered_at = ? WHERE id = ?').run(status, answer ?? null, now(), qid);
-  event(db, q.item_id, `question-${status}`, `${qid}: ${answer ?? status}`);
+const hydrateQuestion = (q) => (q ? { ...q, draft: q.draft ? JSON.parse(q.draft) : null } : null);
+
+function closeQuestion(db, qid, status, answer, body) {
+  return tx(db, () => {
+    const q = hydrateQuestion(db.prepare('SELECT * FROM questions WHERE id = ?').get(qid));
+    if (!q) throw new Error(`no question ${qid}`);
+    // An approval may carry the draft's body as the user edited it; other questions ignore `body`.
+    const edited = q.draft && typeof body === 'string' && body.trim() && body !== q.draft.body;
+    const draft = edited ? { ...q.draft, body, edited: true } : q.draft;
+    db.prepare('UPDATE questions SET status = ?, answer = ?, answered_at = ?, draft = ? WHERE id = ?').run(status, answer ?? null, now(), draft && JSON.stringify(draft), qid);
+    event(db, q.item_id, `question-${status}`, `${qid}: ${answer ?? status}`);
+    return { ...q, status, answer: answer ?? null, draft };
+  });
 }
 
-export const answer = (db, qid, text) => closeQuestion(db, qid, 'answered', text);
+export const answer = (db, qid, text, { body } = {}) => closeQuestion(db, qid, 'answered', text, body);
 // An optional reason is kept as the question's answer, so the loop sees why it was declined.
 export const decline = (db, qid, reason) => closeQuestion(db, qid, 'declined', reason || undefined);
 
@@ -228,8 +251,40 @@ export function listQuestions(db, { status, itemId } = {}) {
   const args = [];
   if (status) { where.push('status = ?'); args.push(status); }
   if (itemId) { where.push('item_id = ?'); args.push(itemId); }
-  return db.prepare(`SELECT * FROM questions ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY CAST(substr(id, 3) AS INTEGER)`).all(...args);
+  return db.prepare(`SELECT * FROM questions ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY CAST(substr(id, 3) AS INTEGER)`).all(...args).map(hydrateQuestion);
 }
+
+// Approved drafts the loop has not performed yet: an approval is never lost between ticks.
+export const approvedDrafts = (db) =>
+  db.prepare("SELECT * FROM questions WHERE draft IS NOT NULL AND status = 'answered' AND written_at IS NULL ORDER BY CAST(substr(id, 3) AS INTEGER)").all().map(hydrateQuestion);
+
+export function markWritten(db, qid, { url } = {}) {
+  return tx(db, () => {
+    const q = hydrateQuestion(db.prepare('SELECT * FROM questions WHERE id = ?').get(qid));
+    if (!q) throw new Error(`no question ${qid}`);
+    if (!q.draft) throw new Error(`${qid} is not a draft`);
+    db.prepare('UPDATE questions SET written_at = ? WHERE id = ?').run(now(), qid);
+    const where = q.draft.target ? ` → ${q.draft.target}` : '';
+    event(db, q.item_id, 'wrote', `${qid} written: ${q.draft.action}${where}${url ? ` ${url}` : ''}`, url ? { questionId: qid, url } : { questionId: qid });
+  });
+}
+
+// Health of a required source (LOOP.md `requires`). Events only on a change, so a source that stays
+// down does not notify on every tick.
+export function setSource(db, name, status, message) {
+  if (!SOURCE_STATUSES.includes(status)) throw new Error(`source status must be one of ${SOURCE_STATUSES.join('|')}`);
+  return tx(db, () => {
+    const before = db.prepare('SELECT status FROM sources WHERE name = ?').get(name)?.status;
+    db.prepare('INSERT INTO sources(name, status, message, checked_at) VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET status = excluded.status, message = excluded.message, checked_at = excluded.checked_at')
+      .run(name, status, status === 'ok' ? null : message || null, now());
+    const changed = before !== status;
+    if (changed && status !== 'ok') event(db, null, 'source-down', `${name} ${status}${message ? `: ${message}` : ''}`, { source: name, status });
+    else if (changed && before) event(db, null, 'source-ok', `${name} is back`, { source: name, status });
+    return { name, status, changed };
+  });
+}
+
+export const listSources = (db) => db.prepare('SELECT * FROM sources ORDER BY name').all();
 
 export function addEvent(db, { itemId, kind, message, data, ts }) {
   if (itemId) mustGet(db, itemId);

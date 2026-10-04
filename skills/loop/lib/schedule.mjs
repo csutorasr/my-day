@@ -56,7 +56,22 @@ export function dreamDue(settings, lastDreamAt, now = new Date()) {
   return !lastDreamAt || new Date(lastDreamAt) < slot;
 }
 
-export function schedule(settings, runningAgents, now = new Date(), { lastDreamAt = null } = {}) {
+// Every other `<name>Schedule` setting (e.g. statusSchedule: Fri 14:00) is a weekly slot like the
+// dream's: due once it passed since `lastAt(name)` (meta last<Name>At), inside working hours.
+export function dueSchedules(settings, lastAt, now = new Date()) {
+  if (!inWorkingHours(settings, now)) return [];
+  const due = [];
+  for (const [key, spec] of Object.entries(settings)) {
+    const m = /^([a-z][A-Za-z0-9]*)Schedule$/.exec(key);
+    if (!m || m[1] === 'dream') continue;
+    const slot = lastDreamSlot(spec, now);
+    const last = slot && lastAt(m[1]);
+    if (slot && (!last || new Date(last) < slot)) due.push(m[1]);
+  }
+  return due;
+}
+
+export function schedule(settings, runningAgents, now = new Date(), { lastDreamAt = null, lastAt = () => null } = {}) {
   const inHours = inWorkingHours(settings, now);
   const freeSlots = inHours ? Math.max(0, settings.maxAgents - runningAgents) : 0;
   let delaySeconds;
@@ -71,5 +86,5 @@ export function schedule(settings, runningAgents, now = new Date(), { lastDreamA
     delaySeconds = Math.min(MAX_WAKEUP, settings.idleMinutes * 60);
     reason = 'idle cadence';
   }
-  return { inHours, runningAgents, freeSlots, delaySeconds, reason, dryRun: settings.dryRun, dreamDue: dreamDue(settings, lastDreamAt, now) };
+  return { inHours, runningAgents, freeSlots, delaySeconds, reason, dryRun: settings.dryRun, dreamDue: dreamDue(settings, lastDreamAt, now), due: dueSchedules(settings, lastAt, now) };
 }
