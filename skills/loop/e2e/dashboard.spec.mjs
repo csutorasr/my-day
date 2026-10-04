@@ -57,7 +57,7 @@ test('the loop view opens over the inbox and is captured for the README', async 
 
   // MR board: one card per lane.
   const board = loop.locator('#mrs');
-  await expect(board.locator('.lane')).toHaveCount(4);
+  await expect(board.locator('[data-lane]')).toHaveCount(4);
   await expect(board.getByText('Blocked on you')).toBeVisible();
   await expect(board.getByRole('button', { name: /Waiting for you · q-1/ })).toBeVisible();
   await expect(board.getByText('Agent a1b2c3d4 working')).toBeVisible();
@@ -111,12 +111,12 @@ test('an approval waits in the outbox and Undo sends nothing', async ({ page }) 
   const needs = page.locator('#needs');
   await needs.getByRole('button', { name: 'Approve' }).click();
   await expect(needs.getByText('Approval queued.')).toBeVisible();
-  await expect(page.locator('.toasts')).toContainText('Approve q-1 in 8s');
+  await expect(page.locator('[data-toasts]')).toContainText('Approve q-1 in 8s');
   // Focus moved on to the next inbox item (an answer field), so open the loop view with the button.
   await page.getByRole('button', { name: /^Loop/ }).click();
   await expect(page.locator('#mrs')).toContainText('Your answer to q-1 is being sent');
   // The undo toast stays above the loop view.
-  await page.locator('.toasts').getByRole('button', { name: 'Undo' }).click();
+  await page.locator('[data-toasts]').getByRole('button', { name: 'Undo' }).click();
   await expect(needs.getByRole('button', { name: 'Approve' })).toBeVisible();
   await page.clock.runFor(10_000);
   const st = await (await page.request.get(`${url}/api/state`)).json();
@@ -140,8 +140,10 @@ test('an answer is sent when the undo window closes, and focus stays in the inbo
 test('the primary button stays readable in the dark theme', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto(url);
-  const ratio = await page.locator('#needs .btn.primary').first().evaluate((el) => {
-    const rgb = (c) => c.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+  const ratio = await page.locator('#needs [data-primary]').first().evaluate((el) => {
+    // Computed colours can be oklch(); let a canvas resolve them to sRGB.
+    const ctx = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d');
+    const rgb = (c) => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3); };
     const lum = ([r, g, b]) => [r, g, b].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
     const st = getComputedStyle(el);
     const [a, b] = [lum(rgb(st.color)), lum(rgb(st.backgroundColor))].sort((x, y) => y - x);
@@ -189,7 +191,7 @@ test('activity names events in words and agents lead with their task', async ({ 
 // Last: stops the server.
 test('when the server goes away the page says how old its data is', async ({ page }) => {
   await page.goto(url);
-  await page.locator('#needs .ask').first().waitFor();
+  await page.locator('#needs [data-inbox-item]').first().waitFor();
   await ctl.stop(dir);
   await expect(page.getByRole('alert')).toContainText('lost its connection to the loop', { timeout: 15_000 });
   await expect(page.getByRole('navigation', { name: 'Overview' })).toContainText('Offline · data from');

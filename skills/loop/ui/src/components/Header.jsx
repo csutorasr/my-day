@@ -1,22 +1,22 @@
 import { useEffect, useRef } from 'react';
+import { ComputerIcon, KeyboardIcon } from '@hugeicons/core-free-icons';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { cn } from '@/lib/utils';
 import { useDashboard, useNotifications, useTheme } from '../dashboard.jsx';
 import { useLoopView } from '../loop.jsx';
+import { Icon } from './Icon.jsx';
 import { mrLanes } from './MrBoard.jsx';
-import { ScreenIcon } from './Icons.jsx';
 
 function ThemeSwitch() {
   const [choice, setChoice] = useTheme();
-  const option = (value, text, extra) => (
-    <button type="button" role="radio" aria-checked={choice === value} onClick={() => setChoice(value)} {...extra}>
-      {text}
-    </button>
-  );
   return (
-    <div className="theme" role="radiogroup" aria-label="Theme">
-      {option('system', <><ScreenIcon />System</>, { title: 'Follow the system setting' })}
-      {option('light', 'Light')}
-      {option('dark', 'Dark')}
-    </div>
+    <ToggleGroup variant="outline" size="sm" spacing={0} aria-label="Theme" value={[choice]} onValueChange={(v) => v[0] && setChoice(v[0])}>
+      <ToggleGroupItem value="system" title="Follow the system setting"><Icon icon={ComputerIcon} />System</ToggleGroupItem>
+      <ToggleGroupItem value="light">Light</ToggleGroupItem>
+      <ToggleGroupItem value="dark">Dark</ToggleGroupItem>
+    </ToggleGroup>
   );
 }
 
@@ -26,6 +26,7 @@ export function Header({ onShortcuts }) {
   const { state: s, live, act, toast } = useDashboard();
   const notifications = useNotifications();
   const loop = useLoopView();
+  const blocked = s ? mrLanes(s).lanes.you.items.length : 0;
   // The loop view sits right below the header; the header wraps on narrow windows, so measure it.
   const bar = useRef(null);
   useEffect(() => {
@@ -33,7 +34,6 @@ export function Header({ onShortcuts }) {
     ro.observe(bar.current);
     return () => ro.disconnect();
   }, []);
-  const blocked = s ? mrLanes(s).lanes.you.items.length : 0;
 
   const enable = async () => {
     if (notifications.permission === 'denied') {
@@ -44,31 +44,31 @@ export function Header({ onShortcuts }) {
   };
 
   return (
-    <header ref={bar}>
-      <div className="bar">
-        <div className="brand">
-          <span className={`live${live ? ' on' : ''}`} aria-hidden="true" />
+    <header ref={bar} className="sticky top-0 z-10 border-b bg-card max-sm:static">
+      <div className="mx-auto flex max-w-[1320px] flex-wrap items-center gap-x-4 gap-y-2 px-6 py-3 max-sm:px-4">
+        <div className="flex items-center gap-2.5">
+          <span className={cn('size-2.5 rounded-full bg-muted-foreground/40', live && 'bg-success shadow-[0_0_0_4px_var(--success-soft)] motion-safe:animate-[pulse-ring_2.4s_ease-in-out_infinite]')} aria-hidden="true" />
           <span className="sr-only" role="status">{live ? 'Connected to the loop' : 'Not connected to the loop'}</span>
-          <h1>my-day</h1>
-          <span className="mono muted small" id="dir">{s ? s.dir.split('/').slice(-2, -1)[0] ?? s.dir : ''}</span>
+          <h1 className="font-heading text-lg font-semibold tracking-tight">my-day</h1>
+          <span className="font-mono text-xs text-muted-foreground max-sm:hidden">{s ? s.dir.split('/').slice(-2, -1)[0] ?? s.dir : ''}</span>
         </div>
-        <div className="chips">
-          <span className={`chip ${s?.dryRun ? 'warn' : 'accent'}`}>{s?.dryRun ? 'Dry run' : 'Live'}</span>
-          {s?.loop.paused && <span className="chip warn">Paused</span>}
-          {s && <span className="chip" id="hours">Working hours {s.loop.workingHours}</span>}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge className={s?.dryRun ? 'bg-warning-soft text-warning' : 'bg-primary/10 text-link'}>{s?.dryRun ? 'Dry run' : 'Live'}</Badge>
+          {s?.loop.paused && <Badge className="bg-warning-soft text-warning">Paused</Badge>}
+          {s && <Badge variant="secondary" className="max-sm:hidden">Working hours {s.loop.workingHours}</Badge>}
         </div>
         <span className="grow" />
         {loop.available && (
-          <button className={`btn loop-btn${loop.open ? ' on' : ''}`} type="button" onClick={loop.toggle} aria-expanded={loop.open} aria-keyshortcuts="l">
-            Loop{blocked ? <> · <b>{blocked} blocked on you</b></> : ''}
-          </button>
+          <Button variant="outline" className={cn(loop.open && 'border-primary bg-primary/10 text-link')} onClick={loop.toggle} aria-expanded={loop.open} aria-keyshortcuts="l">
+            Loop{blocked ? <> · <b className="font-semibold text-warning">{blocked} blocked on you</b></> : ''}
+          </Button>
         )}
         <ThemeSwitch />
-        <button className="btn" type="button" onClick={() => act(`/api/loop/${s?.loop.paused ? 'resume' : 'pause'}`, null, s?.loop.paused ? 'Loop resumed.' : 'Loop paused. Nothing new is started until you resume.')}>
+        <Button variant="outline" onClick={() => act(`/api/loop/${s?.loop.paused ? 'resume' : 'pause'}`, null, s?.loop.paused ? 'Loop resumed.' : 'Loop paused. Nothing new is started until you resume.')}>
           {s?.loop.paused ? 'Resume loop' : 'Pause loop'}
-        </button>
-        <button className="btn link" type="button" onClick={enable}>{NOTIFY_LABEL[notifications.permission]}</button>
-        <button className="btn link kbd-only" type="button" onClick={onShortcuts} aria-keyshortcuts="?">Shortcuts</button>
+        </Button>
+        <Button variant="ghost" className="text-muted-foreground" onClick={enable}>{NOTIFY_LABEL[notifications.permission]}</Button>
+        <Button variant="ghost" className="text-muted-foreground max-sm:hidden" onClick={onShortcuts} aria-keyshortcuts="?"><Icon icon={KeyboardIcon} />Shortcuts</Button>
       </div>
     </header>
   );

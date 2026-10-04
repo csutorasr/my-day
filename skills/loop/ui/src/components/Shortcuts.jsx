@@ -1,4 +1,7 @@
 import { useEffect, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Kbd } from '@/components/ui/kbd';
 import { useDashboard } from '../dashboard.jsx';
 import { useLoopView } from '../loop.jsx';
 
@@ -35,7 +38,7 @@ export function useShortcuts(openHelp) {
         if (e.key === 'Escape') el.blur();
         return;
       }
-      if (document.querySelector('dialog[open]')) return;
+      if (document.querySelector('[data-slot="dialog-content"]')) return;
       const { open, available, toggle, hide } = view.current;
       if (e.key === 'Escape' && open) { hide(); e.preventDefault(); return; }
       if (e.key === 'l' && available) { toggle(); e.preventDefault(); return; }
@@ -48,7 +51,7 @@ export function useShortcuts(openHelp) {
         firstControl(next)?.focus();
         e.preventDefault();
       } else if (e.key === 'a' && item) {
-        (item.querySelector('[data-primary]') ?? item.querySelector('.act'))?.click();
+        (item.querySelector('[data-primary]') ?? item.querySelector('[data-act]'))?.click();
         e.preventDefault();
       } else if (e.key === 'd' && item) {
         item.querySelector('[data-decline]')?.click();
@@ -68,16 +71,18 @@ export function useShortcuts(openHelp) {
   }, [openHelp, undo, toast]);
 }
 
-export function ShortcutsDialog({ dialogRef }) {
+export function ShortcutsDialog({ open, onOpenChange }) {
   return (
-    <dialog ref={dialogRef} className="shortcuts" aria-labelledby="h-shortcuts">
-      <h2 id="h-shortcuts">Keyboard shortcuts</h2>
-      <dl>
-        {SHORTCUTS.map(([keys, what]) => (
-          <div key={keys}><dt><kbd>{keys}</kbd></dt><dd>{what}</dd></div>
-        ))}
-      </dl>
-      <form method="dialog"><button className="btn" type="submit">Close</button></form>
-    </dialog>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader><DialogTitle>Keyboard shortcuts</DialogTitle></DialogHeader>
+        <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-sm">
+          {SHORTCUTS.map(([keys, what]) => (
+            <div key={keys} className="contents"><dt><Kbd>{keys}</Kbd></dt><dd>{what}</dd></div>
+          ))}
+        </dl>
+        <DialogFooter><DialogClose render={<Button variant="outline" />}>Close</DialogClose></DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
