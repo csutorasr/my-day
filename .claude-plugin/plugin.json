@@ -1,6 +1,6 @@
 {
   "name": "my-day",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Run-forever development loop: merges ready MRs/PRs, fixes review comments, develops assigned tickets on worktrees, triages unassigned work, with a local dashboard.",
   "author": {
     "name": "Robin Csutorás",
