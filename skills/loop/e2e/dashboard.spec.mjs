@@ -95,3 +95,47 @@ test('the primary button stays readable in the dark theme', async ({ page }) => 
   });
   expect(ratio).toBeGreaterThanOrEqual(4.5);
 });
+
+test('on a phone, risky approvals and merge / rebase actions are not offered', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(url);
+  const needs = page.locator('#needs');
+  await expect(needs.getByText('Approve from a larger screen. You can decline here.')).toBeVisible();
+  await expect(needs.getByRole('button', { name: 'Approve' })).toHaveCount(0);
+  await expect(needs.locator('[data-inbox-item="q-1"]').getByRole('button', { name: 'Decline' })).toBeVisible();
+  const board = page.locator('#mrs');
+  await expect(board.getByRole('button', { name: /^Merge / })).toHaveCount(0);
+  await expect(board.getByRole('button', { name: /^Rebase / })).toHaveCount(0);
+  await expect(board.getByRole('button', { name: /^Fix review / })).toBeVisible();
+});
+
+test('keyboard: j moves through the inbox, a approves, u undoes, ? lists the shortcuts', async ({ page }) => {
+  await page.clock.install();
+  await page.goto(url);
+  // Wait for the inbox rows, not just the panel (it renders a skeleton first).
+  await page.locator('#needs [data-inbox-item]').first().waitFor();
+  await page.keyboard.press('j');
+  await expect(page.locator(':focus')).toHaveText('backend !112');
+  await page.keyboard.press('a');
+  await expect(page.locator('#needs').getByText('Approval queued.')).toBeVisible();
+  await page.keyboard.press('u');
+  await expect(page.locator('#needs').getByRole('button', { name: 'Approve' })).toBeVisible();
+  await page.keyboard.press('?');
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
+});
+
+test('activity names events in words and agents lead with their task', async ({ page }) => {
+  await page.goto(url);
+  await expect(page.getByText('agent started').first()).toBeVisible();
+  await expect(page.locator('#agents').getByText('Fixing pipeline on web !81')).toBeVisible();
+});
+
+// Last: stops the server.
+test('when the server goes away the page says how old its data is', async ({ page }) => {
+  await page.goto(url);
+  await page.locator('#needs .ask').first().waitFor();
+  await ctl.stop(dir);
+  await expect(page.getByRole('alert')).toContainText('lost its connection to the loop', { timeout: 15_000 });
+  await expect(page.locator('header')).toContainText('Data from');
+});
+

@@ -11,7 +11,18 @@ export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 export const sentence = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
 // Quick actions the loop understands (server REQUESTS); labels per action.
-export const ACTION_LABEL = { rebase: 'Rebase', 'fix-pipeline': 'Fix pipeline', 'fix-review': 'Fix review', merge: 'Merge step', retry: 'Retry', elaborate: 'Ask why' };
+export const ACTION_LABEL = { rebase: 'Rebase', 'fix-pipeline': 'Fix pipeline', 'fix-review': 'Fix review', merge: 'Merge', retry: 'Retry', elaborate: 'Explain' };
+// What each action asks the loop to do, for tooltips and screen readers.
+export const ACTION_HINT = {
+  rebase: 'rebase onto the target branch (force-push with lease)',
+  'fix-pipeline': 'send an agent to fix the failing pipeline',
+  'fix-review': 'send an agent to handle the open review comments',
+  merge: 'merge it if every merge gate passes',
+  retry: 'try this item again',
+  elaborate: 'explain where this item stands, in the session',
+};
+// Actions that rewrite or merge shared history: never offered on a phone.
+export const RISKY_ACTIONS = new Set(['rebase', 'merge']);
 const VERDICT_ACTION = { rebase: 'rebase', 'fix-pipeline': 'fix-pipeline', 'fix-review': 'fix-review', merge: 'merge' };
 export const NEXT = { merge: 'Ready for the merge step', rebase: 'Needs a rebase', 'fix-pipeline': 'Pipeline failed', 'fix-review': 'Review comments to handle' };
 
@@ -85,6 +96,18 @@ const ATTN = new Set(['question', 'review-requested', 'dashboard-request', 'dash
 export const dotFor = (k) => (BAD.has(k) ? 'bad' : GOOD.has(k) ? 'ok' : ATTN.has(k) ? 'warn' : 'accent');
 
 export const isApproval = (q) => /^approve\b/i.test(q.text);
+
+// Event kinds as words: "pipeline-green" → "pipeline green", with a few clearer names.
+const EVENT_WORDS = { dispatched: 'agent started', worker: 'agent finished', 'review-requested': 'review requested', 'dashboard-request': 'requested on the dashboard', 'dashboard-answer': 'answered on the dashboard', 'dashboard-pause': 'paused on the dashboard', status: 'status change' };
+export const eventLabel = (kind) => EVENT_WORDS[kind] ?? kind.replace(/-/g, ' ');
+
+// What a running agent is doing, from the item it works on ("Fixing pipeline on web !81").
+const STATUS_VERB = { fixing: 'Fixing', rebasing: 'Rebasing', developing: 'Developing', reviewing: 'Handling review on' };
+export function agentTask(item) {
+  const verb = STATUS_VERB[item.status] ?? 'Working on';
+  const what = item.data?.verdict === 'fix-pipeline' && item.status === 'fixing' ? 'pipeline on ' : '';
+  return `${verb} ${what}${label(item)}`;
+}
 
 // "Next check 14:20" while a tick is scheduled, else "Last check …", else ''.
 export function nextCheck(loop) {
