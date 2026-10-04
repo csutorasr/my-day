@@ -127,6 +127,28 @@ files it writes. `LOOP.md`'s `## Files` section lists the files a workspace's lo
 a team-lead loop with weekly 1:1 prep, …) is a new template folder, not new code. Item types are
 free (`request`, `1on1`, …); `forge: none` turns off the code-host sync.
 
+| Profile | For |
+|---|---|
+| `dev` | Repos side by side under the workspace root; workers are subagents of the loop session |
+| `dev-bundle` | A **bundle repo** that gitignores several cloned repos inside it; every code step runs as `claude -p` in the repo's worktree (`runner: claude-p`) |
+
+### Workers as `claude -p`
+
+`runner: claude-p` in `LOOP.md` runs each worker as a separate, detached `claude -p` process started
+in the worktree of the repo it works on — so that repo's `CLAUDE.md`, tracked
+`.claude/settings.json`, skills and MCP servers apply, exactly as in a fresh session there. A ticket
+that touches several repos runs one process per repo in `DEVELOP.md`'s cross-repo order; each gets
+the earlier repos' results, and a failed or blocked repo stops the chain. Runs are tracked in
+`.my-day/runs/`, outlive the loop session and are collected by the next tick; the dashboard shows
+which repo a chain is in and offers **Stop run**. Settings: `permissionMode` (default `acceptEdits`;
+runs cannot answer prompts, so allow a repo's build and test commands in its
+`.claude/settings.json`), `runTimeoutMinutes` (90), `claudeBin`. The default `runner: agent` keeps
+subagents.
+
+Smoke test by hand (CI uses a fake `claude`): in a workspace with `runner: claude-p`, make a
+worktree, then `state.mjs run <item> --kind develop --task "add a line to README, local only" --chain <repo>=<worktree>`;
+`state.mjs runs` shows it running, and the next `tick` reports it under `runs.finished`.
+
 ## Configuration
 
 `.my-day/` in the workspace root. Every `X.md` is shared with the team (commit it); an
@@ -175,7 +197,7 @@ Add to `.gitignore`:
   from the header (with several loops shown: per loop, in the health strip). The loop view shows
   one loop at a time, with a switcher when several are shown.
 - Dashboard clicks reach the loop on its next `tick` (`fromDashboard`); the loop also runs
-  `state.mjs watch-dashboard` as a monitor, so a click wakes it within seconds.
+  `state.mjs watch` as a monitor, so a click (or a finished `claude -p` run) wakes it within seconds.
 
 ## How it works
 
@@ -186,10 +208,11 @@ CLI, `skills/loop/bin/state.mjs`, backed by SQLite in `.my-day/state.db`:
 |---|---|
 | `bootstrap` | Config check, DB, registers the loop in `~/.my-day`, one-time migration, shared dashboard server, orphaned agents |
 | `loops`, `stop` | The machine's loops (running / stopped); mark this loop stopped |
+| `run`, `runs`, `run-stop` | `claude -p` workers per repo (`runner: claude-p`): start a chain, list, stop |
 | `tick` | Code-host sync (MRs + review requests), merge-gate verdicts, schedule, compact to-do JSON |
 | `dispatch` / `reconcile` | Worker bookkeeping: attempts, links, new MRs, retry limit → escalation |
 | `dream-data` / `dream-done` | History bundle for a dream; record `lastDreamAt` |
-| `pause` / `resume`, `watch-dashboard` | Stop dispatching; stream dashboard clicks to the session |
+| `pause` / `resume`, `watch` | Stop dispatching; stream dashboard clicks and finished runs to the session |
 | `summary`, `show`, `list`, `ask`, `answer`, … | State queries and updates (`state.mjs help`) |
 
 `bin/forge.mjs` reads GitLab (`glab`) and GitHub (`gh`) with one output shape. The
