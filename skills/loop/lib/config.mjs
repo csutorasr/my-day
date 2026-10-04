@@ -43,6 +43,10 @@ export const DEFAULTS = {
   reviewBatchNotify: 3, // more new review requests than this → one summary notification
   hideCoveredReviews: false, // hide review requests others already approved / requested changes on
   dreamSchedule: '', // when my-day:dream is due, e.g. 'Fri 17:00'; empty = off
+  runner: 'agent', // agent = Agent-tool subagents; claude-p = detached `claude -p` per repo (lib/runs.mjs)
+  permissionMode: 'acceptEdits', // passed to claude -p --permission-mode
+  runTimeoutMinutes: 90, // a claude -p run still alive after this is stopped and fails
+  claudeBin: 'claude', // the CLI the runner starts ($CLAUDE_BIN overrides)
 };
 
 const read = (file) => (existsSync(file) ? readFileSync(file, 'utf8') : null);
