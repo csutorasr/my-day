@@ -26,7 +26,7 @@ export function sanitizeSelection(saved, loops, showStopped) {
   return kept.length ? kept : defaultSelection(loops);
 }
 
-const LISTS = ['items', 'questions', 'failed', 'reviews', 'finishedToday', 'recent'];
+const LISTS = ['items', 'questions', 'failed', 'reviews', 'finishedToday', 'recent', 'runs'];
 
 // The inbox view over several loops: today's single-loop state shape, every row tagged with its
 // loop (`loop` = id, `loopName`). `loop` / `dryRun` / … come from the first state, so a single

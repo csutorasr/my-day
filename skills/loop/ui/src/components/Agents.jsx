@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { toneBadge } from '@/lib/tone';
 import { useDashboard } from '../dashboard.jsx';
-import { agentTask } from '../format.js';
+import { agentTask, hhmm, runStep } from '../format.js';
 import { Panel } from './Panel.jsx';
 import { Ref } from './Ref.jsx';
 
@@ -19,15 +19,22 @@ export function Agents() {
           {Array.from({ length: max }, (_, k) => <span key={k} className={cn('h-1.5', k < running.length ? 'bg-primary' : 'bg-muted')} />)}
         </div>
         <div className="flex flex-col gap-3">
-          {running.map((i) => (
-            <div className={entry} key={i.id}>
-              <Badge className={toneBadge.wait}>running</Badge>
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-sm">{agentTask(i)}</span>
-                <span className="flex flex-wrap items-center gap-2"><Ref item={i} actions={[]} /><span className="font-mono text-xs text-muted-foreground">agent {i.agent_id}</span></span>
+          {running.map((i) => {
+            // A claude -p chain shows which repo it is in; subagents show their agent id.
+            const run = runStep(i, s.runs);
+            return (
+              <div className={entry} key={i.id} data-agent={i.id}>
+                <Badge className={toneBadge.wait}>running</Badge>
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-sm">{agentTask(i)}{run ? ` · ${run.label}` : ''}</span>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Ref item={i} actions={run ? ['stop'] : []} />
+                    <span className="font-mono text-xs text-muted-foreground">{run ? `claude -p since ${hhmm(run.since)}` : `agent ${i.agent_id}`}</span>
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <div className="pt-1 text-xs font-semibold text-muted-foreground">Finished today</div>
         <div className="flex flex-col gap-3">
