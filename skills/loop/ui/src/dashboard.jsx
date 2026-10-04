@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getJson, post } from './api.js';
+import { mergeStates, sanitizeSelection } from './selection.js';
 
 const Ctx = createContext(null);
 export const useDashboard = () => useContext(Ctx);
@@ -14,8 +15,18 @@ const TOAST_MS = 4000;
 // - `queue`: an outbox action (approve, decline, review, request) sent after UNDO_MS unless undone;
 // - `act`: an immediate POST (pause / resume) with a toast and reload;
 // - `toast`: a short confirmation.
+// Which loops are shown, remembered per browser: { selected: [ids], showStopped }.
+const PREFS = 'my-day-loops';
+function readPrefs() {
+  try { return { selected: null, showStopped: false, ...JSON.parse(localStorage.getItem(PREFS) ?? '{}') }; } catch { return { selected: null, showStopped: false }; }
+}
+
 export function DashboardProvider({ children }) {
-  const [state, setState] = useState(null);
+  const [loops, setLoops] = useState([]);
+  const [states, setStates] = useState(null);
+  const [prefs, setPrefs] = useState(readPrefs);
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
   const [offline, setOffline] = useState(false);
   const [live, setLive] = useState(false);
   const [toastText, setToastText] = useState(null);
@@ -38,7 +49,12 @@ export function DashboardProvider({ children }) {
   const load = useCallback(async () => {
     clearTimeout(retryTimer.current);
     try {
-      setState(await getJson('/api/state'));
+      const list = await getJson('/api/loops');
+      const { selected, showStopped } = prefsRef.current;
+      const ids = sanitizeSelection(selected, list, showStopped);
+      const { loops: got } = await getJson(`/api/state?loops=${ids.join(',')}`);
+      setLoops(list);
+      setStates(got);
       setUpdatedAt(Date.now());
       setOffline(false);
     } catch {
@@ -122,11 +138,33 @@ export function DashboardProvider({ children }) {
     return () => { es.close(); clearTimeout(retryTimer.current); };
   }, [load]);
 
+  const savePrefs = useCallback((next) => {
+    const merged = { ...prefsRef.current, ...next };
+    prefsRef.current = merged;
+    setPrefs(merged);
+    try { localStorage.setItem(PREFS, JSON.stringify(merged)); } catch {}
+    load();
+  }, [load]);
+  const setSelected = useCallback((selected) => savePrefs({ selected }), [savePrefs]);
+  const setShowStopped = useCallback((showStopped) => savePrefs({ showStopped }), [savePrefs]);
+
+  // The inbox shows the selected loops merged; with one loop it is that loop's state, as before.
+  const state = useMemo(() => (states ? mergeStates(states) : null), [states]);
+  const selected = useMemo(() => (states ?? []).map((st) => st.id), [states]);
+
   return (
-    <Ctx.Provider value={{ state, offline, live, updatedAt, load, act, queue, undo, isQueued, outbox, toast, toastText, toastError, dismissToast }}>
+    <Ctx.Provider value={{ state, states, loops, selected, setSelected, showStopped: prefs.showStopped, setShowStopped, offline, live, updatedAt, load, act, queue, undo, isQueued, outbox, toast, toastText, toastError, dismissToast }}>
       {children}
     </Ctx.Provider>
   );
+}
+
+// The same dashboard, narrowed to one loop (the loop view): components keep reading `state`.
+export function ScopedDashboard({ loop, children }) {
+  const dash = useContext(Ctx);
+  const one = dash.states?.find((st) => st.id === loop);
+  const value = useMemo(() => ({ ...dash, state: one ? mergeStates([one]) : null }), [dash, one]);
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 async function hasPush() {

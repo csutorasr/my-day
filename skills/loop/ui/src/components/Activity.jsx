@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { toneDot } from '@/lib/tone';
 import { getJson } from '../api.js';
 import { useDashboard } from '../dashboard.jsx';
+import { apiFor } from '../selection.js';
 import { dotFor, eventLabel, hhmm } from '../format.js';
 import { Panel } from './Panel.jsx';
 import { Ref } from './Ref.jsx';
@@ -28,7 +29,7 @@ export function Activity() {
   useEffect(() => {
     if (!s) return undefined;
     let stale = false;
-    getJson('/api/summary?' + new URLSearchParams(JSON.parse(key)))
+    getJson(`${apiFor(s.id)}/summary?` + new URLSearchParams(JSON.parse(key)))
       .then((sum) => { if (!stale) setEvents(sum.events.filter((e) => e.kind !== 'created').reverse()); })
       .catch(() => {});
     return () => { stale = true; };
