@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { useDashboard, useIsPhone } from '../dashboard.jsx';
 import { isApproval, label, nextCheck, plural, sentence } from '../format.js';
@@ -17,7 +18,7 @@ import { Ref } from './Ref.jsx';
 // else the previous one's, else the heading.
 function focusNext(from) {
   const row = from.closest('[data-inbox-item]');
-  const targets = [...document.querySelectorAll('#needs [data-inbox-item]:not([data-queued]) :is(input, button):not([tabindex="-1"])')].filter((el) => !row?.contains(el));
+  const targets = [...document.querySelectorAll('#needs [data-inbox-item]:not([data-queued]) :is(input, textarea, button):not([tabindex="-1"])')].filter((el) => !row?.contains(el));
   const after = targets.find((el) => row && (row.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
   (after ?? targets.at(-1) ?? document.getElementById('h-needs'))?.focus();
 }
@@ -43,9 +44,61 @@ function Queued({ text, k }) {
   );
 }
 
+// A draft of an outward write (WRITES.md `ask`): what it does and where, its body editable in place.
+// Approve sends the body as it stands; the loop writes exactly that.
+function Draft({ q }) {
+  const { state: s, queue, isQueued } = useDashboard();
+  const [body, setBody] = useState(q.draft.body);
+  const item = q.item ? s.items.find((i) => i.id === q.item.id && i.loop === q.loop) : null;
+  const key = `q:${q.loop}:${q.id}`;
+  const base = apiFor(q.loop);
+  const edited = body !== q.draft.body;
+  const send = (decline, el) => {
+    if (!decline && !body.trim()) { el.form.elements.body.focus(); return; }
+    focusNext(el);
+    queue(decline
+      ? { key, label: `Decline ${q.id}`, path: `${base}/questions/${q.id}/decline`, payload: {}, ok: `${q.id} declined. Nothing is written.` }
+      : { key, label: `Approve ${q.id}`, path: `${base}/questions/${q.id}/answer`, payload: { text: 'approved', body }, ok: `${q.id} approved${edited ? ' with your edits' : ''}. The loop writes it within seconds.` });
+  };
+  return (
+    <div className={row} data-inbox-item={q.id} data-loop={q.loop} data-queued={isQueued(key) || undefined} data-draft>
+      <div className="flex min-w-0 flex-[1_1_100%] flex-col gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Workspace row={q} />
+          <span className="font-mono text-xs text-muted-foreground">{q.id}</span>
+          <Badge className={kind('bg-warning-soft text-warning')}>Draft</Badge>
+          {item && <Ref item={item} actions={[]} />}
+        </div>
+        <p className="text-sm font-medium">{sentence(q.text)}</p>
+        <span className="text-xs text-muted-foreground">
+          <span className="font-mono">{q.draft.action}</span>{q.draft.target ? <> to <b className="font-medium text-foreground">{q.draft.target}</b></> : null}
+        </span>
+      </div>
+      {isQueued(key) ? (
+        <Queued k={key} text="Approval queued." />
+      ) : (
+        <form className="flex flex-[1_1_100%] flex-col gap-2" onSubmit={(e) => { e.preventDefault(); send(false, e.nativeEvent.submitter ?? e.currentTarget.elements.body); }}>
+          <label className="sr-only" htmlFor={`d-${q.loop}-${q.id}`}>Text to write for {q.id}</label>
+          <Textarea id={`d-${q.loop}-${q.id}`} name="body" value={body} onChange={(e) => setBody(e.target.value)} rows={4} className="max-h-72 text-sm md:text-sm" />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" size="lg" data-primary>{edited ? 'Approve edited' : 'Approve'}</Button>
+            <Button type="button" size="lg" variant="outline" data-decline onClick={(e) => send(true, e.currentTarget)}>Decline</Button>
+            {edited && <Button type="button" size="lg" variant="ghost" className="text-muted-foreground" onClick={() => setBody(q.draft.body)}>Reset</Button>}
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
 // One open question or approval. The item it is about is shown in full, so the decision can be made
 // here without looking it up: title, and for an MR its merge gates.
 function Ask({ q }) {
+  if (q.draft) return <Draft q={q} />;
+  return <Question q={q} />;
+}
+
+function Question({ q }) {
   const { state: s, queue, isQueued } = useDashboard();
   const phone = useIsPhone();
   const [text, setText] = useState('');

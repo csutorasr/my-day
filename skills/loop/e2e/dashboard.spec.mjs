@@ -33,17 +33,23 @@ test('the inbox is the first screen and is captured for the README', async ({ pa
   const overview = page.getByRole('navigation', { name: 'Overview' });
   await expect(overview).toContainText('Live');
   await expect(overview.getByRole('link', { name: '6 merge requests, 2 blocked on you' })).toBeVisible();
-  await expect(page).toHaveTitle('(8) my-day');
+  await expect(page).toHaveTitle('(9) my-day');
+  // A source the pm loop needs is down: said once, in the health strip.
+  await expect(overview.locator('[data-sources-down]')).toHaveText('Source down: voyage: intercom (login expired)');
 
-  // Two loops run on this machine (a third is stopped): the filter shows them, rows say where they belong.
-  await expect(page.getByRole('group', { name: 'Loops' }).getByRole('button')).toHaveCount(2);
-  await expect(page.getByRole('list', { name: 'Loops shown' }).getByRole('listitem')).toHaveCount(2);
+  // Three loops run on this machine (a fourth is stopped): the filter shows them, rows say where they belong.
+  await expect(page.getByRole('group', { name: 'Loops' }).getByRole('button')).toHaveCount(3);
+  await expect(page.getByRole('list', { name: 'Loops shown' }).getByRole('listitem')).toHaveCount(3);
 
   // Needs you is one inbox: decisions (with the MR they are about), failures and reviews.
   const needs = page.locator('#needs');
   await expect(needs.getByText('Rebase !112 onto main and force-push with lease?')).toBeVisible();
   await expect(needs.getByText('SHOP-35: sign in with a magic link')).toBeVisible();
-  await expect(needs.getByRole('button', { name: 'Approve' })).toBeVisible();
+  await expect(needs.locator(`[data-loop="${loops.shop}"]`).getByRole('button', { name: 'Approve' })).toBeVisible();
+  // A draft shows what it writes where, with its text ready to edit.
+  const draft = needs.locator(`[data-loop="${loops.voyage}"][data-draft]`);
+  await expect(draft).toContainText('slack: post channel to #voyage-product');
+  await expect(draft.getByLabel('Text to write for q-1')).toHaveValue(/^Week 40\nShipped: trip sharing/);
   await expect(needs.getByText('Pipeline still red after 3 attempts: flaky checkout test')).toBeVisible();
   await expect(needs.getByRole('button', { name: /Mark .* reviewed/ })).toHaveCount(3);
   await expect(needs.locator(`[data-loop="${loops.studio}"]`).getByText('Visual regression tests fail on the focus ring')).toBeVisible();
@@ -117,7 +123,8 @@ test('an approval waits in the outbox and Undo sends nothing', async ({ page }) 
   await page.clock.install();
   await page.goto(url);
   const needs = page.locator('#needs');
-  await needs.getByRole('button', { name: 'Approve' }).click();
+  const shopApprove = needs.locator(`[data-loop="${loops.shop}"]`).getByRole('button', { name: 'Approve' });
+  await shopApprove.click();
   await expect(needs.getByText('Approval queued.')).toBeVisible();
   await expect(page.locator('[data-toasts]')).toContainText('Approve q-1 in 8s');
   // Focus moved on to the next inbox item (an answer field), so open the loop view with the button.
@@ -125,7 +132,7 @@ test('an approval waits in the outbox and Undo sends nothing', async ({ page }) 
   await expect(page.locator('#mrs')).toContainText('Your answer to q-1 is being sent');
   // The undo toast stays above the loop view.
   await page.locator('[data-toasts]').getByRole('button', { name: 'Undo' }).click();
-  await expect(needs.getByRole('button', { name: 'Approve' })).toBeVisible();
+  await expect(shopApprove).toBeVisible();
   await page.clock.runFor(10_000);
   const st = await stateOf(page, 'shop');
   assert.ok(st.questions.some((q) => q.id === 'q-1'), 'q-1 is still open after Undo');
@@ -187,18 +194,18 @@ test('a broken loop is listed next to the filter with its error', async ({ page 
 test('Show stopped adds the stopped loop to the filter; choosing it shows its inbox', async ({ page }) => {
   await page.goto(url);
   const filter = page.getByRole('group', { name: 'Loops' });
-  await expect(filter.getByRole('button')).toHaveCount(2);
-  await page.getByRole('switch', { name: 'Show stopped' }).click();
   await expect(filter.getByRole('button')).toHaveCount(3);
+  await page.getByRole('switch', { name: 'Show stopped' }).click();
+  await expect(filter.getByRole('button')).toHaveCount(4);
   await filter.getByRole('button', { name: /archive/ }).click();
-  await expect(page.getByRole('list', { name: 'Loops shown' }).getByRole('listitem')).toHaveCount(3);
+  await expect(page.getByRole('list', { name: 'Loops shown' }).getByRole('listitem')).toHaveCount(4);
   await expect(page.locator('[data-loop-row]').filter({ hasText: 'archive' })).toContainText('Stopped');
   // The choice is remembered per browser; put it back for the next tests.
   await page.reload();
-  await expect(filter.getByRole('button')).toHaveCount(3);
+  await expect(filter.getByRole('button')).toHaveCount(4);
   await filter.getByRole('button', { name: /archive/ }).click();
   await page.getByRole('switch', { name: 'Show stopped' }).click();
-  await expect(filter.getByRole('button')).toHaveCount(2);
+  await expect(filter.getByRole('button')).toHaveCount(3);
 });
 
 test('a review marked done goes to the workspace it belongs to, although both use the same id', async ({ page }) => {
@@ -247,7 +254,9 @@ test('on a phone, risky approvals and merge / rebase actions are not offered', a
   await page.goto(url);
   const needs = page.locator('#needs');
   await expect(needs.getByText('Approve from a larger screen. You can decline here.')).toBeVisible();
-  await expect(needs.getByRole('button', { name: 'Approve' })).toHaveCount(0);
+  await expect(needs.locator(`[data-loop="${loops.shop}"]`).getByRole('button', { name: 'Approve' })).toHaveCount(0);
+  // A draft (a message, a comment) may be approved on the go.
+  await expect(needs.locator(`[data-loop="${loops.voyage}"][data-draft]`).getByRole('button', { name: 'Approve' })).toBeVisible();
   await expect(needs.locator(`[data-loop="${loops.shop}"][data-inbox-item="q-1"]`).getByRole('button', { name: 'Decline' })).toBeVisible();
   // Phones get the inbox only: no loop view, even from a #loop link.
   await expect(page.getByRole('button', { name: /^Loop/ })).toHaveCount(0);
@@ -269,9 +278,30 @@ test('keyboard: j moves through the inbox, a approves, u undoes, ? lists the sho
   // Focus moved on to the next item's answer field; Esc leaves it so the next key is a shortcut.
   await page.keyboard.press('Escape');
   await page.keyboard.press('u');
-  await expect(page.locator('#needs').getByRole('button', { name: 'Approve' })).toBeVisible();
+  await expect(page.locator(`#needs [data-loop="${loops.shop}"]`).getByRole('button', { name: 'Approve' })).toBeVisible();
   await page.keyboard.press('?');
   await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
+});
+
+test('a draft approved with edits is written as edited; Reset brings back the loop\'s text', async ({ page }) => {
+  await page.clock.install();
+  await page.goto(url);
+  const draft = page.locator(`#needs [data-loop="${loops.voyage}"][data-draft]`);
+  const text = draft.getByLabel('Text to write for q-1');
+  await text.fill('Week 40\nShipped: trip sharing.');
+  await expect(draft.getByRole('button', { name: 'Approve edited' })).toBeVisible();
+  await draft.getByRole('button', { name: 'Reset' }).click();
+  await expect(text).toHaveValue(/Risk: map pins overlap/);
+  await text.fill('Week 40\nShipped: trip sharing.');
+  await draft.getByRole('button', { name: 'Approve edited' }).click();
+  await expect(draft.getByText('Approval queued.')).toBeVisible();
+  await page.clock.runFor(9_000);
+  await expect(draft).toHaveCount(0);
+  assert.equal((await stateOf(page, 'voyage')).questions.length, 0);
+  const sum = await (await page.request.get(`${url}/api/loops/${loops.voyage}/summary?today=1`)).json();
+  const answer = sum.events.find((e) => e.kind === 'dashboard-answer');
+  assert.equal(answer.data.draft.body, 'Week 40\nShipped: trip sharing.');
+  assert.match(answer.message, /q-1 approved on dashboard \(edited\)/);
 });
 
 test('a claude -p run shows its repo in the chain, and Stop run waits in the outbox', async ({ page }) => {

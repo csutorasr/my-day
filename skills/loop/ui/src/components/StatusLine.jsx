@@ -6,8 +6,9 @@ import { hhmm, nextCheck, plural } from '../format.js';
 import { mrLanes } from './MrBoard.jsx';
 import { PauseButton } from './Header.jsx';
 
-// The health strip above the inbox: live or not, merge requests, agents. The loop counts open the
-// loop view; on phones (no loop view) they are plain text.
+// The health strip above the inbox: live or not, merge requests, agents, and any required source
+// (MCP server / CLI) that is down. The loop counts open the loop view; on phones (no loop view) they
+// are plain text.
 export function StatusLine() {
   const { state: s, live, offline, updatedAt, act } = useDashboard();
   const loop = useLoopView();
@@ -15,7 +16,7 @@ export function StatusLine() {
   if (!s) return <nav className={nav} aria-label="Overview"><Skeleton className="h-4 w-48" /></nav>;
   const { lanes, total } = mrLanes(s);
   const running = s.items.filter((i) => i.agent_id).length;
-  const maxAgents = s.loops.reduce((n, l) => n + (l.loop.maxAgents || 3), 0);
+  const maxAgents = s.loops.reduce((n, l) => n + (l.loop.maxAgents ?? 3), 0);
   const blocked = lanes.you.items.length;
   const mrs = <>{plural(total, 'merge request')}{blocked ? <>, <b className="font-semibold">{blocked} blocked on you</b></> : ''}</>;
   const agents = `${running} of ${maxAgents} agents busy`;
@@ -24,6 +25,9 @@ export function StatusLine() {
   const open = (e) => { e.preventDefault(); loop.show(); };
   const link = 'underline-offset-4 hover:text-foreground hover:underline';
   const hot = blocked && 'font-medium text-warning';
+  // A source the loop reported missing or failing: its work is skipped until it is back.
+  const down = s.sources.filter((x) => x.status !== 'ok' && x.status !== 'unchecked');
+  const sourceName = (x) => `${s.multi ? `${x.loopName}: ` : ''}${x.name.replace(/^(mcp|cli):/, '')}${x.message ? ` (${x.message})` : ` ${x.status}`}`;
   return (
     <div className="flex flex-col gap-2">
     <nav className={nav} aria-label="Overview">
@@ -40,6 +44,11 @@ export function StatusLine() {
           <span className={cn(hot)}>{mrs}</span>
           <span>{agents}</span>
         </>
+      )}
+      {down.length > 0 && (
+        <span className="font-medium text-danger" data-sources-down>
+          {down.length === 1 ? 'Source down' : 'Sources down'}: {down.map(sourceName).join(', ')}
+        </span>
       )}
     </nav>
     {s.multi && (

@@ -29,11 +29,12 @@ test('a saved selection keeps only loops that still exist and are visible, else 
 });
 
 test('mergeStates tags every row with its loop and keeps ids apart', () => {
-  const st = (id) => ({ id, name: id, dryRun: false, items: [{ id: 'bug-1' }], questions: [{ id: 'q-1', item: { id: 'bug-1' } }], failed: [{ id: 'bug-1' }], reviews: [], finishedToday: [], recent: [{ id: 1 }], loop: { paused: false } });
+  const st = (id) => ({ id, name: id, dryRun: false, items: [{ id: 'bug-1' }], questions: [{ id: 'q-1', item: { id: 'bug-1' } }], failed: [{ id: 'bug-1' }], reviews: [], finishedToday: [], recent: [{ id: 1 }], sources: [{ name: 'mcp:slack', status: 'error' }], loop: { paused: false } });
   const m = mergeStates([st('a'), st('b')]);
   assert.deepEqual(m.questions.map((q) => `${q.loop}:${q.id}`), ['a:q-1', 'b:q-1']);
   assert.deepEqual(m.items.map((i) => i.loopName), ['a', 'b']);
   assert.deepEqual(m.failed.map((f) => f.loop), ['a', 'b']);
+  assert.deepEqual(m.sources.map((x) => `${x.loopName}:${x.name}`), ['a:mcp:slack', 'b:mcp:slack']);
   assert.equal(m.multi, true);
   assert.deepEqual(m.loops.map((l) => l.id), ['a', 'b']);
   assert.equal(mergeStates([st('a')]).multi, false);

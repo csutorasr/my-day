@@ -1,6 +1,7 @@
-// An imaginary machine for the dashboard: a home (~/.my-day stand-in) with three registered loops,
+// An imaginary machine for the dashboard: a home (~/.my-day stand-in) with four registered loops,
 // each a workspace .my-day folder with LOOP.md and a state.db filled through the real DB layer.
-// `shop` shows every panel, `studio` is a second running loop, `archive` is stopped. Used by the
+// `shop` shows every panel, `studio` is a second running loop, `voyage` is a pm loop (a draft to
+// approve, a source down), `archive` is stopped. Used by the
 // e2e test (README screenshots) and `npm run ui:demo`. Everything here is made up; never copy real
 // work into it. Times are relative to now so the "Today" activity filter keeps working.
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -111,6 +112,36 @@ function seedStudio(dir) {
   return dir;
 }
 
+// A product manager's loop (pm profile, no code host): a spec in progress, clustered feedback, a
+// backlog ticket with hygiene findings, and the weekly status as a Slack draft to approve. The
+// feedback tool's MCP server lost its login, so its intake is paused.
+function seedVoyage(dir) {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'LOOP.md'), '---\nworkingHours: 08:00-18:00\nmaxAgents: 0\nforge: none\nrequires: mcp:atlassian, mcp:slack, mcp:intercom\nstatusSchedule: Fri 14:00\n---\n# Imaginary workspace\n');
+  const db = S.openDb(join(dir, 'state.db'));
+  const trip = 'https://tracker.example.com/browse';
+  S.upsertItem(db, { type: 'spec', ext: 'jira:TRIP-20', title: 'Offline itinerary', url: `${trip}/TRIP-20`, status: 'prd-review' });
+  S.upsertItem(db, { type: 'feedback', ext: 'fb:calendar-export', title: 'Export trips to a calendar (7 requests)', status: 'linked', data: { ticket: 'TRIP-24', requests: 7 } });
+  S.upsertItem(db, { type: 'ticket', ext: 'jira:TRIP-31', title: 'Map pins overlap on dense cities', url: `${trip}/TRIP-31`, status: 'needs-fix', data: { findings: ['no acceptance criteria', 'no estimate'] } });
+  const { id: report } = S.upsertItem(db, { type: 'report', ext: 'status:2026-w40', title: 'Status, week 40', status: 'drafted' });
+  S.addEvent(db, { kind: 'scheduled', message: 'status: drafted from TRIP board and 3 merged epics', ts: ago(40) });
+  S.setSource(db, 'mcp:atlassian', 'ok');
+  S.setSource(db, 'mcp:slack', 'ok');
+  S.setSource(db, 'mcp:intercom', 'error', 'login expired');
+  S.ask(db, report, 'Post the weekly status to the product channel?', {
+    draft: {
+      action: 'slack: post channel',
+      target: '#voyage-product',
+      body: 'Week 40\nShipped: trip sharing, faster search.\nIn progress: offline itinerary (PRD in review).\nRisk: map pins overlap on dense cities, fix planned for next sprint.',
+    },
+  });
+  S.setMeta(db, 'lastTickAt', ago(3));
+  S.setMeta(db, 'nextTickAt', new Date(Date.now() + 17 * 60_000).toISOString());
+  S.setMeta(db, 'sessionStartedAt', ago(90));
+  db.close();
+  return dir;
+}
+
 // A finished engagement: the loop was stopped yesterday.
 function seedArchive(dir) {
   mkdirSync(dir, { recursive: true });
@@ -125,9 +156,9 @@ function seedArchive(dir) {
 }
 
 // `root` holds the workspaces and the home. `only` limits the seed to some loops (e.g. ['shop']).
-export function seedDemo(root, { only = ['shop', 'studio', 'archive'] } = {}) {
+export function seedDemo(root, { only = ['shop', 'studio', 'voyage', 'archive'] } = {}) {
   const home = join(root, 'home');
-  const seeders = { shop: seedShop, studio: seedStudio, archive: seedArchive };
+  const seeders = { shop: seedShop, studio: seedStudio, voyage: seedVoyage, archive: seedArchive };
   const loops = {};
   for (const name of only) {
     const dir = seeders[name](join(root, name, '.my-day'));
