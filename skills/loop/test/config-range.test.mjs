@@ -98,3 +98,21 @@ test('the dev template LOOP.md lists every legacy file', () => {
   writeFileSync(join(d, 'LOOP.md'), readFileSync(new URL('../templates/dev/LOOP.md', import.meta.url), 'utf8'));
   assert.deepEqual(new Set(requiredFiles(d)), new Set(LEGACY_REQUIRED));
 });
+
+test('the dev-bundle profile: same manifest as dev, runs workers as claude -p', () => {
+  const d = mkdtempSync(join(tmpdir(), 'myday-bundle-'));
+  writeFileSync(join(d, 'LOOP.md'), readFileSync(new URL('../templates/dev-bundle/LOOP.md', import.meta.url), 'utf8'));
+  assert.deepEqual(new Set(requiredFiles(d)), new Set(LEGACY_REQUIRED));
+  const s = loopSettings(d);
+  assert.equal(s.runner, 'claude-p');
+  assert.equal(s.permissionMode, 'acceptEdits');
+  assert.equal(s.runTimeoutMinutes, 90);
+  assert.match(readFileSync(new URL('../templates/dev-bundle/SETUP.md', import.meta.url), 'utf8'), /templates\/dev\/SETUP\.md/);
+  assert.match(readFileSync(new URL('../templates/dev-bundle/DEVELOP.md', import.meta.url), 'utf8'), /## Cross-repo order/);
+});
+
+test('runner defaults to agent', () => {
+  const d = mkdtempSync(join(tmpdir(), 'myday-bundle-'));
+  writeFileSync(join(d, 'LOOP.md'), '---\n---\n');
+  assert.equal(loopSettings(d).runner, 'agent');
+});
