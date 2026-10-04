@@ -20,6 +20,7 @@ forge: <FORGE>            # gitlab | github | none (no code-host sync)
 group: <GROUP>/
 ticketPattern: '<TICKET_REGEX>'
 aiReviewer: <AI_REVIEWER_BOT>   # bot account(s) of AI reviewers, comma-separated, if any
+requires: <REQUIRES>      # sources the loop cannot work without, e.g. mcp:atlassian, cli:glab
 targetBranch: main
 reviewBatchNotify: 3
 hideCoveredReviews: false  # true = hide reviews others already handled, until re-requested with an approval still needed
@@ -39,7 +40,8 @@ WORKFLOW-SUBTASK.md, WORKFLOW-BUG.md, DEVELOP.md, FIX-REVIEW.md, MERGE-GATES.md,
 
 ## Tick priority
 Tracker sync: run the ticket queries in `QUERY-MY-TASKS.md` → `$SM upsert-many`; items gone from
-scope → `status=closed` + event; `awaiting-answers` tickets → look for replies. `QUERY-INBOX.md`
+scope → `status=closed` + event, only from a query that succeeded while its source is up (`tick` →
+`sources.down`); `awaiting-answers` tickets → look for replies. `QUERY-INBOX.md`
 only when 1–5 find nothing actionable. Code host and reviews come from `$SM tick` (`sync`).
 
 1. `act.merge` → extra gates in `MERGE-GATES.md` (dependencies, trains) → merge; event `merged`.
