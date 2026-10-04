@@ -1,5 +1,9 @@
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+import { toneBadge } from '@/lib/tone';
 import { useDashboard } from '../dashboard.jsx';
 import { agentTask } from '../format.js';
+import { Panel } from './Panel.jsx';
 import { Ref } from './Ref.jsx';
 
 export function Agents() {
@@ -7,36 +11,39 @@ export function Agents() {
   const max = s?.loop.maxAgents || 3;
   const running = (s?.items ?? []).filter((i) => i.agent_id);
   const finished = (s?.finishedToday ?? []).slice().reverse();
+  const entry = 'flex items-start gap-3';
   return (
-    <section className="panel" id="agents" aria-labelledby="h-agents">
-      <div className="head"><h2 id="h-agents">Agents</h2><span className="muted small">{s ? `${running.length} of ${max} slots busy` : ''}</span></div>
-      <div className="body">
-        <div className="slots" style={{ gridTemplateColumns: `repeat(${max}, minmax(0, 1fr))` }}>
-          {Array.from({ length: max }, (_, k) => <span key={k} className={`slot${k < running.length ? ' on' : ''}`} />)}
+    <Panel id="agents" titleId="h-agents" title="Agents" extra={<span className="text-xs text-muted-foreground">{s ? `${running.length} of ${max} slots busy` : ''}</span>}>
+      <div className="flex flex-col gap-3 p-4">
+        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${max}, minmax(0, 1fr))` }}>
+          {Array.from({ length: max }, (_, k) => <span key={k} className={cn('h-1.5', k < running.length ? 'bg-primary' : 'bg-muted')} />)}
         </div>
-        <div className="list">
+        <div className="flex flex-col gap-3">
           {running.map((i) => (
-            <div className="agent" key={i.id}>
-              <span className="g wait">running</span>
-              <div className="main"><span className="body-sm">{agentTask(i)}</span><span className="row-head"><Ref item={i} actions={[]} /><span className="mono muted tiny">agent {i.agent_id}</span></span></div>
+            <div className={entry} key={i.id}>
+              <Badge className={toneBadge.wait}>running</Badge>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-sm">{agentTask(i)}</span>
+                <span className="flex flex-wrap items-center gap-2"><Ref item={i} actions={[]} /><span className="font-mono text-xs text-muted-foreground">agent {i.agent_id}</span></span>
+              </div>
             </div>
           ))}
         </div>
-        <div className="sec">Finished today</div>
-        <div className="list">
-          {s && !finished.length && <div className="muted body-sm">Nothing yet.</div>}
+        <div className="pt-1 text-xs font-semibold text-muted-foreground">Finished today</div>
+        <div className="flex flex-col gap-3">
+          {s && !finished.length && <div className="text-sm text-muted-foreground">Nothing yet.</div>}
           {finished.map((f) => (
-            <div className="agent" key={f.id}>
-              <span className={`g ${f.status === 'done' ? 'ok' : 'bad'}`}>{f.status ?? 'done'}</span>
-              <div className="main">
-                <span className="body-sm wrap">{f.message.replace(/^\S+ \w+: /, '')}</span>
+            <div className={entry} key={f.id}>
+              <Badge className={toneBadge[f.status === 'done' || !f.status ? 'ok' : 'bad']}>{f.status ?? 'done'}</Badge>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-sm break-words">{f.message.replace(/^\S+ \w+: /, '')}</span>
                 {f.item && <Ref item={s.items.find((i) => i.id === f.item.id) ?? f.item} actions={[]} />}
-                {f.commits?.length > 0 && <span className="mono muted tiny">{f.commits.map((c) => String(c).slice(0, 8)).join(' · ')}</span>}
+                {f.commits?.length > 0 && <span className="font-mono text-xs text-muted-foreground">{f.commits.map((c) => String(c).slice(0, 8)).join(' · ')}</span>}
               </div>
             </div>
           ))}
         </div>
       </div>
-    </section>
+    </Panel>
   );
 }

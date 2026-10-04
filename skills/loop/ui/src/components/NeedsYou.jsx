@@ -1,8 +1,15 @@
 import { useState } from 'react';
+import { CheckmarkCircle02Icon } from '@hugeicons/core-free-icons';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 import { useDashboard, useIsPhone } from '../dashboard.jsx';
 import { isApproval, label, nextCheck, plural, sentence } from '../format.js';
 import { Gates } from './Gates.jsx';
-import { CheckIcon } from './Icons.jsx';
+import { Icon } from './Icon.jsx';
+import { Count, Panel } from './Panel.jsx';
 import { Ref } from './Ref.jsx';
 
 // After an item leaves the inbox, keep keyboard focus in the inbox: the next item's first control,
@@ -14,13 +21,16 @@ function focusNext(from) {
   (after ?? targets.at(-1) ?? document.getElementById('h-needs'))?.focus();
 }
 
+const row = 'flex flex-wrap items-start gap-x-6 gap-y-3 border-b px-4 py-3.5 last:border-b-0 data-queued:bg-muted/40';
+const kind = (tone) => cn('font-semibold', tone);
+
 // A row whose action sits in the outbox: says what will happen and offers Undo until it is sent.
 function Queued({ text, k }) {
   const { undo } = useDashboard();
   return (
-    <div className="queued-row" role="status">
-      <span className="muted small">{text} Sending in a few seconds.</span>
-      <button type="button" className="btn small" onClick={() => undo(k)}>Undo</button>
+    <div className="flex items-center gap-3" role="status">
+      <span className="text-xs text-muted-foreground">{text} Sending in a few seconds.</span>
+      <Button size="sm" variant="outline" onClick={() => undo(k)}>Undo</Button>
     </div>
   );
 }
@@ -48,17 +58,17 @@ function Ask({ q }) {
   };
 
   return (
-    <div className="ask" data-inbox-item={q.id} data-queued={isQueued(key) || undefined}>
-      <div className="main">
-        <div className="meta">
-          <span className="mono muted small">{q.id}</span>
-          <span className={`kind${approval ? ' approval' : ''}`}>{approval ? 'Approval' : 'Question'}</span>
+    <div className={row} data-inbox-item={q.id} data-queued={isQueued(key) || undefined}>
+      <div className="flex min-w-0 flex-[1_1_340px] flex-col gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-xs text-muted-foreground">{q.id}</span>
+          <Badge className={kind(approval ? 'bg-warning-soft text-warning' : 'bg-primary/10 text-link')}>{approval ? 'Approval' : 'Question'}</Badge>
           {item && <Ref item={item} actions={[]} />}
         </div>
-        <div className="text">{question}</div>
+        <p className="text-sm font-medium">{question}</p>
         {item && (
-          <div className="context">
-            <span className="small">{item.title}</span>
+          <div className="flex flex-col gap-1.5 bg-muted px-3 py-2">
+            <span className="text-xs">{item.title}</span>
             {item.type === 'mr' && <Gates mr={item} target={s.loop.targetBranch} />}
           </div>
         )}
@@ -66,15 +76,15 @@ function Ask({ q }) {
       {isQueued(key) ? (
         <Queued k={key} text={`${approval ? 'Approval' : 'Answer'} queued.`} />
       ) : (
-        <form onSubmit={(e) => { e.preventDefault(); if (!blocked) send(false, e.nativeEvent.submitter ?? e.currentTarget.elements.text); }}>
+        <form className="flex flex-[1_1_300px] flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (!blocked) send(false, e.nativeEvent.submitter ?? e.currentTarget.elements.text); }}>
           <label className="sr-only" htmlFor={`a-${q.id}`}>{approval ? 'Note for' : 'Answer'} {q.id}</label>
-          <input type="text" id={`a-${q.id}`} name="text" value={text} onChange={(e) => setText(e.target.value)} placeholder={approval ? 'Optional note' : 'Your answer'} autoComplete="off" />
+          <Input id={`a-${q.id}`} name="text" value={text} onChange={(e) => setText(e.target.value)} placeholder={approval ? 'Optional note' : 'Your answer'} autoComplete="off" className="h-9 min-w-40 flex-1 text-sm max-sm:h-11 md:text-sm" />
           {blocked ? (
-            <span className="phone-note small">Approve from a larger screen. You can decline here.</span>
+            <span className="max-w-[22ch] text-xs text-warning">Approve from a larger screen. You can decline here.</span>
           ) : (
-            <button className="btn primary" type="submit" data-primary>{approval ? 'Approve' : 'Send'}</button>
+            <Button type="submit" size="lg" data-primary>{approval ? 'Approve' : 'Send'}</Button>
           )}
-          <button className="btn" type="button" data-decline onClick={(e) => send(true, e.currentTarget)}>Decline</button>
+          <Button type="button" size="lg" variant="outline" data-decline onClick={(e) => send(true, e.currentTarget)}>Decline</Button>
         </form>
       )}
     </div>
@@ -83,12 +93,12 @@ function Ask({ q }) {
 
 function Failure({ f }) {
   return (
-    <li data-inbox-item={f.id}>
-      <div className="main">
-        <span className="row-head"><span className="kind bad">Failed</span><Ref item={f} /></span>
-        <span className="t">{f.title}</span>
-        <span className="reason">{f.fail_reason}</span>
-        {f.hint && <span className="muted small">{f.hint}</span>}
+    <li className={row} data-inbox-item={f.id}>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex flex-wrap items-center gap-2"><Badge className={kind('bg-danger-soft text-danger')}>Failed</Badge><Ref item={f} /></span>
+        <span className="text-sm">{f.title}</span>
+        <span className="text-xs text-danger">{f.fail_reason}</span>
+        {f.hint && <span className="text-xs text-muted-foreground">{f.hint}</span>}
       </div>
     </li>
   );
@@ -102,17 +112,17 @@ function Review({ r }) {
     queue({ key, label: `${done ? 'Mark' : 'Skip'} ${label(r)}${done ? ' reviewed' : ''}`, path: `/api/reviews/${r.id}/${done ? 'done' : 'skip'}`, ok: `${label(r)} ${done ? 'marked reviewed' : 'skipped'}.` });
   };
   return (
-    <li data-inbox-item={r.id} data-queued={isQueued(key) || undefined}>
-      <div className="main">
-        <span className="row-head"><span className="kind">Review</span><Ref item={r} actions={[]} /></span>
-        <span className="t">{r.title}</span>
+    <li className={cn(row, 'items-center')} data-inbox-item={r.id} data-queued={isQueued(key) || undefined}>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex flex-wrap items-center gap-2"><Badge className={kind('bg-muted text-foreground')}>Review</Badge><Ref item={r} actions={[]} /></span>
+        <span className="text-sm">{r.title}</span>
       </div>
       {isQueued(key) ? (
         <Queued k={key} text="Marked." />
       ) : (
-        <span className="btns">
-          <button type="button" className="btn small" data-primary aria-label={`Mark ${label(r)} reviewed`} onClick={(e) => mark(true, e.currentTarget)}>Done</button>
-          <button type="button" className="btn small ghost" data-decline aria-label={`Skip ${label(r)}`} onClick={(e) => mark(false, e.currentTarget)}>Skip</button>
+        <span className="flex gap-1">
+          <Button size="sm" variant="outline" data-primary aria-label={`Mark ${label(r)} reviewed`} onClick={(e) => mark(true, e.currentTarget)}>Done</Button>
+          <Button size="sm" variant="ghost" className="text-muted-foreground" data-decline aria-label={`Skip ${label(r)}`} onClick={(e) => mark(false, e.currentTarget)}>Skip</Button>
         </span>
       )}
     </li>
@@ -125,44 +135,50 @@ export function NeedsYou() {
   const count = s ? s.questions.length + s.failed.length + s.reviews.length : 0;
   let body;
   if (!s) {
-    body = <div className="ask"><div className="main"><span className="skel" style={{ width: '40%' }} /><span className="skel" style={{ width: '80%' }} /></div></div>;
+    body = <div className="flex flex-col gap-2 p-4"><Skeleton className="h-4 w-2/5" /><Skeleton className="h-4 w-4/5" /></div>;
   } else if (!count) {
     const nxt = nextCheck(s.loop);
     body = (
-      <div className="calm">
-        <span className="mark" aria-hidden="true"><CheckIcon /></span>
-        <div>
-          <b>Nothing needs you right now.</b>
-          <span className="muted small">
+      <div className="flex items-center gap-4 px-4 py-6">
+        <span className="grid size-10 shrink-0 place-items-center bg-success-soft text-success"><Icon icon={CheckmarkCircle02Icon} className="size-5" /></span>
+        <div className="flex flex-col gap-0.5">
+          <b className="text-sm font-semibold">Nothing needs you right now.</b>
+          <span className="text-xs text-muted-foreground">
             {s.loop.paused ? 'The loop is paused. Resume it from the header.' : nxt ? `${nxt}. Decisions, failures and reviews show up here.` : 'Decisions, failures and reviews show up here.'}
           </span>
         </div>
       </div>
     );
   } else {
+    const group = 'border-b last:border-b-0';
     body = (
       <>
         {s.questions.length > 0 && (
-          <div className="group" aria-label="Decisions">{s.questions.map((q) => <Ask key={q.id} q={q} />)}</div>
+          <div className={group} role="group" aria-label="Decisions">{s.questions.map((q) => <Ask key={q.id} q={q} />)}</div>
         )}
         {s.failed.length > 0 && (
-          <ul className="rows group" aria-label="Failures">{s.failed.map((f) => <Failure key={f.id} f={f} />)}</ul>
+          <ul className={group} aria-label="Failures">{s.failed.map((f) => <Failure key={f.id} f={f} />)}</ul>
         )}
         {s.reviews.length > 0 && (
-          <ul className="rows group" aria-label="Reviews for you">{s.reviews.map((r) => <Review key={r.id} r={r} />)}</ul>
+          <ul className={group} aria-label="Reviews for you">{s.reviews.map((r) => <Review key={r.id} r={r} />)}</ul>
         )}
       </>
     );
   }
   const parts = s ? [plural(s.questions.length, 'decision'), plural(s.failed.length, 'failure'), plural(s.reviews.length, 'review')].filter((p) => !p.startsWith('0 ')) : [];
   return (
-    <section className="panel" id="needs" aria-labelledby="h-needs">
-      <div className="head">
-        <h2 id="h-needs" tabIndex={-1}>Needs you</h2>
-        <span className={`count${count ? ' warn' : ''}`} aria-label={count ? `${plural(count, 'item')} waiting` : undefined}>{count || ''}</span>
-        <span className="muted small">{parts.length ? `${parts.join(' · ')}. ` : ''}Every action can be undone for a few seconds.<span className="kbd-only"> Press ? for shortcuts.</span></span>
-      </div>
+    <Panel
+      id="needs"
+      titleId="h-needs"
+      title="Needs you"
+      extra={(
+        <>
+          <Count n={count} tone="warn" label={count ? `${plural(count, 'item')} waiting` : undefined} />
+          <span className="text-xs text-muted-foreground">{parts.length ? `${parts.join(' · ')}. ` : ''}Every action can be undone for a few seconds.<span className="max-sm:hidden"> Press ? for shortcuts.</span></span>
+        </>
+      )}
+    >
       <div>{body}</div>
-    </section>
+    </Panel>
   );
 }

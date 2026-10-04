@@ -6,13 +6,18 @@ Notes for coding agents working on this repo. Read `README.md` first.
 
 - `skills/*/SKILL.md`: the plugin's skills. `skills/loop/bin/state.mjs` is the CLI the loop runs.
 - `skills/loop/lib`: state DB, config, forge and helpers. `skills/loop/server`: the dashboard server.
-- `skills/loop/ui`: the dashboard UI (React + Vite). `skills/loop/test`: `node --test` suites.
+- `skills/loop/ui`: the dashboard UI (React + Vite + Tailwind v4 + shadcn/ui on Base UI), an npm
+  workspace. `src/components/ui` is shadcn's (add with `pnpm dlx shadcn@latest add <name>` run in
+  `skills/loop/ui`); app components compose them. `skills/loop/test`: `node --test` suites.
 - `skills/loop/e2e`: Playwright test on an imaginary workspace (`seed.mjs`); writes the README screenshots.
 
 ## Rules
 
-- Node ≥ 22.13, ES modules, no runtime dependencies beyond the optional `web-push`. Vite and
-  React are dev dependencies; nothing builds at install time.
+- Node ≥ 22.13, ES modules, no runtime dependencies beyond the optional `web-push`. The UI's
+  packages are only build inputs (bundled into `server/public`); nothing builds at install time.
+- **UI styling:** shadcn components and Tailwind classes with the preset's tokens
+  (`src/globals.css`; status tones `success` / `warning` / `danger`, `link`). No hand-written CSS
+  files; dark mode is the `.dark` class on `<html>`.
 - Run `npm test` before every commit. It needs no `npm install`.
 - CI (`.github/workflows/ci.yml`) runs the unit tests on Node 22 and 24, rebuilds the UI and fails
   if `skills/loop/server/public` differs from what was committed, and runs the e2e test.
