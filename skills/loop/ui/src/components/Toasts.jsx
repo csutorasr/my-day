@@ -3,7 +3,7 @@ import { useDashboard } from '../dashboard.jsx';
 
 // Bottom stack: one toast per queued action with a countdown and Undo, then the last confirmation.
 export function Toasts() {
-  const { outbox, undo, toastText } = useDashboard();
+  const { outbox, undo, toastText, toastError, dismissToast } = useDashboard();
   // Re-render four times a second while something is queued so the countdown moves.
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -22,7 +22,12 @@ export function Toasts() {
           <button type="button" onClick={() => undo(e.key)}>Undo</button>
         </div>
       ))}
-      {toastText && <div className="toast">{toastText}</div>}
+      {toastText && (
+        <div className={`toast${toastError ? ' error' : ''}`} role={toastError ? 'alert' : undefined}>
+          <span>{toastText}</span>
+          {toastError && <button type="button" onClick={dismissToast}>Dismiss</button>}
+        </div>
+      )}
     </div>
   );
 }

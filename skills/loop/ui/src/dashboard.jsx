@@ -19,21 +19,27 @@ export function DashboardProvider({ children }) {
   const [offline, setOffline] = useState(false);
   const [live, setLive] = useState(false);
   const [toastText, setToastText] = useState(null);
+  const [toastError, setToastError] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState(null);
   const [outbox, setOutbox] = useState([]);
   const pending = useRef(new Map());
   const toastTimer = useRef();
   const retryTimer = useRef();
 
-  const toast = useCallback((text) => {
+  // Confirmations fade after a few seconds; errors stay until dismissed so they can be read.
+  const toast = useCallback((text, { error = false } = {}) => {
     setToastText(text);
+    setToastError(error);
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToastText(null), TOAST_MS);
+    if (!error) toastTimer.current = setTimeout(() => setToastText(null), TOAST_MS);
   }, []);
+  const dismissToast = useCallback(() => setToastText(null), []);
 
   const load = useCallback(async () => {
     clearTimeout(retryTimer.current);
     try {
       setState(await getJson('/api/state'));
+      setUpdatedAt(Date.now());
       setOffline(false);
     } catch {
       setOffline(true);
@@ -50,7 +56,7 @@ export function DashboardProvider({ children }) {
         if (ok) toast(ok);
         load();
       } catch (err) {
-        toast(err.message);
+        toast(`That did not reach the loop: ${err.message}. Try again.`, { error: true });
       }
     },
     [load, toast],
@@ -105,7 +111,8 @@ export function DashboardProvider({ children }) {
     load();
     const es = new EventSource('/api/stream');
     es.onopen = () => setLive(true);
-    es.onerror = () => setLive(false);
+    // A broken stream usually means the server went away: check, so the page can say its data is stale.
+    es.onerror = () => { setLive(false); load(); };
     es.addEventListener('change', () => load());
     // Push delivers notifications when subscribed; otherwise fall back to page notifications.
     es.addEventListener('notify', async (m) => {
@@ -116,7 +123,7 @@ export function DashboardProvider({ children }) {
   }, [load]);
 
   return (
-    <Ctx.Provider value={{ state, offline, live, load, act, queue, undo, isQueued, outbox, toast, toastText }}>
+    <Ctx.Provider value={{ state, offline, live, updatedAt, load, act, queue, undo, isQueued, outbox, toast, toastText, toastError, dismissToast }}>
       {children}
     </Ctx.Provider>
   );
@@ -129,12 +136,13 @@ async function hasPush() {
 }
 
 // Browser notifications: page notifications always, web push when the server has a VAPID key.
+// `permission` mirrors the browser: 'default' (not asked), 'granted' or 'denied'.
 export function useNotifications() {
-  const [on, setOn] = useState(() => 'Notification' in window && Notification.permission === 'granted');
+  const [permission, setPermission] = useState(() => ('Notification' in window ? Notification.permission : 'denied'));
   const enable = useCallback(async () => {
     const perm = await Notification.requestPermission();
+    setPermission(perm);
     if (perm !== 'granted') return;
-    setOn(true);
     const { enabled, publicKey } = await getJson('/api/push/key');
     if (!enabled || !('serviceWorker' in navigator)) return;
     const reg = await navigator.serviceWorker.register('/sw.js');
@@ -143,7 +151,20 @@ export function useNotifications() {
     const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }));
     await post('/api/push/subscribe', sub.toJSON());
   }, []);
-  return { on, enable };
+  return { permission, enable };
+}
+
+// Phone-sized viewport: risky approvals and actions are not offered there.
+const PHONE = '(max-width: 640px)';
+export function useIsPhone() {
+  const [phone, setPhone] = useState(() => window.matchMedia(PHONE).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(PHONE);
+    const on = () => setPhone(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return phone;
 }
 
 // Theme: system (default) / light / dark, remembered per browser. index.html applies it before paint.
