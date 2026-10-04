@@ -89,6 +89,31 @@ test('pause and resume from the dashboard set the paused flag', async () => {
   assert.equal(S.getMeta(db, 'paused'), 'false');
 });
 
+test('serves the built dashboard: page, its hashed assets and the service worker', async () => {
+  const page = await fetch(`${base}/`);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-type'), /text\/html/);
+  assert.equal(page.headers.get('cache-control'), 'no-store');
+  const html = await page.text();
+  assert.match(html, /<div id="root"><\/div>/);
+  const assets = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]);
+  assert.ok(assets.some((a) => a.endsWith('.js')) && assets.some((a) => a.endsWith('.css')), 'page links its JS and CSS bundle');
+  for (const a of assets) {
+    const r = await fetch(`${base}${a}`);
+    assert.equal(r.status, 200, a);
+    assert.match(r.headers.get('cache-control'), /immutable/);
+  }
+  const sw = await fetch(`${base}/sw.js`);
+  assert.equal(sw.status, 200);
+  assert.match(sw.headers.get('content-type'), /javascript/);
+});
+
+test('does not serve anything else from the public folder', async () => {
+  for (const p of ['/.build-hash', '/assets/../../server.mjs', '/%2e%2e/server.mjs', '/index.htm', '/assets/missing.js']) {
+    assert.equal((await fetch(`${base}${p}`)).status, 404, p);
+  }
+});
+
 test('stale pid is replaced', async () => {
   await ctl.stop(dir);
   writeFileSync(join(dir, 'server.pid'), JSON.stringify({ pid: 999999, port }));

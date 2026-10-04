@@ -1,7 +1,7 @@
 // my-day dashboard: read-mostly view of state.db with SSE live updates and web push.
 import { createServer } from 'node:http';
-import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import * as S from '../lib/db.mjs';
@@ -84,7 +84,19 @@ const body = (req) =>
     req.on('end', () => { try { ok(s ? JSON.parse(s) : {}); } catch (e) { bad(e); } });
   });
 
-const STATIC = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/sw.js': ['sw.js', 'text/javascript'] };
+// The dashboard UI is a Vite build (skills/loop/ui) committed into public/: index.html, sw.js and
+// content-hashed files under assets/. Anything else under public/ is not served.
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
+
+function staticFile(pathname) {
+  const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
+  if (!(rel === 'index.html' || rel === 'sw.js' || /^assets\/[\w.-]+$/.test(rel))) return null;
+  const type = TYPES[extname(rel)];
+  const file = join(PUBLIC, rel);
+  if (!type || !file.startsWith(PUBLIC + sep) || !existsSync(file)) return null;
+  // Hashed assets never change under the same name; the page and the worker must always revalidate.
+  return { body: readFileSync(file), type, cache: rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-store' };
+}
 
 const server = createServer(async (req, res) => {
   const port = server.address().port;
@@ -154,8 +166,11 @@ const server = createServer(async (req, res) => {
       req.on('close', () => clients.delete(res));
       return;
     }
-    const file = STATIC[url.pathname];
-    if (file) return send(res, 200, readFileSync(join(PUBLIC, file[0]), 'utf8'), file[1]);
+    const file = req.method === 'GET' && staticFile(url.pathname);
+    if (file) {
+      res.writeHead(200, { 'content-type': file.type, 'cache-control': file.cache });
+      return res.end(file.body);
+    }
     send(res, 404, { error: 'not found' });
   } catch (e) {
     send(res, 500, { error: e.message });
