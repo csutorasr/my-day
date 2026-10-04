@@ -10,7 +10,8 @@ shell variables do not persist). Templates: `${CLAUDE_PLUGIN_ROOT}/skills/loop/t
 
 A **profile** is a template folder there (`templates/<profile>/`, e.g. `dev`) with a `SETUP.md`
 (its interview) and the `.md` files it writes. The loop itself is the same for every profile: it
-runs what the written files say. `templates/DREAM.md` is shared by every profile.
+runs what the written files say. Shared by every profile: `templates/WRITES.md` (outward-write
+policy), `templates/TRACKERS.md` (the tracker interview) and `templates/DREAM.md`.
 
 Ask one question per message, multiple choice when possible, and always propose what
 exploration found so the user mostly confirms.
@@ -37,6 +38,12 @@ files it does not have come from that profile's folder. For every file it writes
   checks (`$SM config missing`).
 - Personal data (account ids, emails, `dryRun`, port, `maxAgents`) → `X.local.md`, never the
   shared files. Shared queries use "current user" forms (`currentUser()`, `@me`, `@Me`).
+- Always write `WRITES.md` from `templates/WRITES.md`, with the profile's `## Writes defaults`
+  named for the user's tools and adjusted by their answers. It is not in `## Files` (workspaces
+  without one treat every action as `auto`).
+- `LOOP.md` `requires` names every MCP server (`mcp:<server>`) and CLI (`cli:<bin>`) the written
+  files use. Check them before handing back: `$SM bootstrap` reports the CLIs; check each `mcp:`
+  one against this session's tools and record it with `$SM source <name> ok|missing`.
 
 ## 4. Ignores
 In a git repo root append to `.gitignore` (ask before editing a tracked file; otherwise

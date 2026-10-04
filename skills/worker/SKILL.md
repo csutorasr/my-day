@@ -24,8 +24,12 @@ write my-day state — the orchestrator does that from your final message.
 4. End with exactly one JSON block:
    ```json
    {"status":"done|failed|blocked","mrUrl":"…","branch":"…","worktree":"…","commits":["sha subject"],
-    "summary":"…","blockers":["…"],"links":[{"kind":"pipeline","url":"…"}],"handled":[{"discussionId":"…","action":"fixed|pushed-back|escalated"}]}
+    "summary":"…","blockers":["…"],"links":[{"kind":"pipeline","url":"…"}],"handled":[{"discussionId":"…","action":"fixed|pushed-back|escalated"}],
+    "drafts":[{"action":"jira: comment","target":"ABC-1","body":"…"}]}
    ```
+5. Outward writes follow `WRITES.md` (`$SM config show WRITES`; none → all `auto`): never make
+   an `ask` or `never` one yourself — put it in `drafts`, the loop asks. A tool or MCP server you
+   need is missing → `blocked` with `missing mcp:<name>` (or `cli:<bin>`) in `blockers`.
 
 ## Kinds
 | Kind | Also read | How |
