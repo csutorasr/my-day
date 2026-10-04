@@ -199,6 +199,24 @@ test('dream: never due outside working hours', () => {
   assert.equal(dreamDue({ ...s, dreamSchedule: 'Sat 10:00' }, null, new Date(2026, 9, 3, 11, 0)), false);
 });
 
+test('reconcile raises the writes a worker was not allowed to make as drafts; bad ones become blockers', () => {
+  const db = S.openDb(join(mkdtempSync(join(tmpdir(), 'myday-drafts-')), 'state.db'));
+  const { id } = S.upsertItem(db, { type: 'bug', ext: 'jira:ABC-77' });
+  dispatch(db, id, { agent: 'a1' });
+  const r = reconcile(db, id, {
+    status: 'done',
+    summary: 'fixed',
+    drafts: [{ action: 'jira: comment', target: 'ABC-77', body: 'Root cause: stale cache.' }, { action: 'slack: post channel' }],
+  }, { retryLimit: 2 });
+  assert.equal(r.next, 'advance');
+  assert.deepEqual(r.drafts, ['q-1']);
+  const [q] = S.listQuestions(db, { status: 'open' });
+  assert.equal(q.item_id, id);
+  assert.deepEqual(q.draft, { action: 'jira: comment', target: 'ABC-77', body: 'Root cause: stale cache.' });
+  assert.match(q.text, /jira: comment → ABC-77/);
+  assert.match(S.listEvents(db, { itemId: id }).find((e) => e.kind === 'worker').data.blockers.join(), /unusable draft/);
+});
+
 import { dueSchedules } from '../lib/schedule.mjs';
 
 test('schedules: any <name>Schedule key is due once its slot passed since last<Name>At', () => {

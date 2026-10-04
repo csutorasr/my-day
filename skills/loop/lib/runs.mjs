@@ -170,6 +170,7 @@ function combined(chain) {
     blockers: results.flatMap((r) => r.blockers ?? []),
     links: results.flatMap((r) => r.links ?? []),
     handled: results.flatMap((r) => r.handled ?? []),
+    drafts: results.flatMap((r) => r.drafts ?? []),
   };
 }
 

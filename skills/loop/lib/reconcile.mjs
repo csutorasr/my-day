@@ -40,15 +40,26 @@ export function reconcile(db, id, raw, { retryLimit }) {
     mrId ??= mr;
   }
   for (const l of r.links ?? []) if (l?.url) S.addLink(db, id, { kind: l.kind ?? 'other', url: l.url, label: l.label });
-  S.addEvent(db, { itemId: id, kind: 'worker', message: `${id} ${r.status}: ${r.summary ?? ''}`.trim(), data: { status: r.status, commits: r.commits, blockers: r.blockers, handled: r.handled } });
+  // Writes WRITES.md did not let the worker make: each becomes a draft for the user to approve.
+  const drafts = [];
+  const blockers = [...(r.blockers ?? [])];
+  for (const d of Array.isArray(r.drafts) ? r.drafts : []) {
+    try {
+      drafts.push(S.ask(db, id, `Approve the worker's ${d.action}${d.target ? ` → ${d.target}` : ''}?`, { draft: d }));
+    } catch (e) {
+      blockers.push(`unusable draft (${e.message})`);
+    }
+  }
+  S.addEvent(db, { itemId: id, kind: 'worker', message: `${id} ${r.status}: ${r.summary ?? ''}`.trim(), data: { status: r.status, commits: r.commits, blockers, handled: r.handled, ...(drafts.length ? { drafts } : {}) } });
 
-  if (r.status === 'done') return { id, status: 'done', next: 'advance', mrId };
+  const asked = drafts.length ? { drafts } : {};
+  if (r.status === 'done') return { id, status: 'done', next: 'advance', mrId, ...asked };
   const { attempts } = S.getItem(db, id);
   const reason = [r.summary, ...(r.blockers ?? [])].filter(Boolean).join(' · ') || r.status;
   if (attempts >= retryLimit) {
     S.fail(db, id, reason);
     S.addEvent(db, { itemId: id, kind: 'escalated', message: `${id} gave up after ${attempts} attempts: ${reason}` });
-    return { id, status: r.status, next: 'escalate', attempts, reason };
+    return { id, status: r.status, next: 'escalate', attempts, reason, ...asked };
   }
-  return { id, status: r.status, next: 'failure-transition', attempts, reason, mrId };
+  return { id, status: r.status, next: 'failure-transition', attempts, reason, mrId, ...asked };
 }

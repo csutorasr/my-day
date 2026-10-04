@@ -21,7 +21,8 @@ Unsure → ask: "Make this a standing rule?"
 ## 2. Find the owner file
 | The rule is about … | File |
 |---|---|
-| tracker, code host, group, ticket pattern, AI reviewer bot, target branch | `LOOP.md` front matter |
+| tracker, code host, group, ticket pattern, AI reviewer bot, target branch, required sources (`requires`) | `LOOP.md` front matter |
+| whether to ask before an outward write ("stop asking before Jira comments", "never DM people") | `WRITES.md` (a row's policy: ask / auto / never) |
 | what counts as my work, ignored items | `QUERY-MY-TASKS.md` (`## Scope` + every query's exclusion clause) |
 | unassigned work, what to ask, ranking | `QUERY-INBOX.md`, `TRIAGE.md` |
 | steps / routing / brainstorm vs fix order | `WORKFLOW-BUG.md`, `WORKFLOW-STORY.md`, `WORKFLOW-SUBTASK.md` |
@@ -31,6 +32,9 @@ Unsure → ask: "Make this a standing rule?"
 | pipeline handling, reviewers, ticket transitions | `POST-MR.md` |
 | cadence, hours, limits, notifications volume, dream schedule | `LOOP.md` |
 | what a dream checks for | `DREAM.md` (optional; create from the template) |
+| pm: backlog scope, definition of ready | `QUERY-BACKLOG.md`, `HYGIENE.md` |
+| pm: feedback sources, grouping, ticket threshold | `QUERY-FEEDBACK.md`, `FEEDBACK.md` |
+| pm: whose questions count, specs workflow, status update | `QUERY-MENTIONS.md`, `WORKFLOW-SPEC.md`, `STATUS.md` (cadence: `statusSchedule` in `LOOP.md`) |
 
 ## 3. Shared or personal?
 - Team rule (everyone using this workspace should behave this way) → `X.md` (committed).

@@ -1,6 +1,6 @@
 ---
 name: loop
-description: Use when the user says "my day", "start my day", "/my-day:loop", or wants the run-forever loop that resolves the workspace's tasks as its .my-day config says (dev profile - merges ready MRs/PRs, fixes review comments, develops assigned tickets on worktrees, triages unassigned work) and keeps a dashboard. Also the entry point on every loop wakeup.
+description: Use when the user says "my day", "start my day", "/my-day:loop", or wants the run-forever loop that resolves the workspace's tasks as its .my-day config says (dev profile - merges ready MRs/PRs, fixes review comments, develops assigned tickets on worktrees, triages unassigned work; pm profile - backlog hygiene, specs, feedback intake, stakeholder replies and status updates) and keeps a dashboard. Also the entry point on every loop wakeup.
 ---
 
 # my-day loop (orchestrator)
@@ -13,13 +13,17 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
 ## Start
 1. `$SM bootstrap --new-session` on the first call of a session, `$SM bootstrap` after.
    `missing` non-empty → run the `my-day:setup` skill first. First call: `open <server.url>`.
+   `sources.checkMcp` (first call of a session) → for each `mcp:<name>`, look for its tools
+   (`mcp__*<name>*`, deferred ones included) and report `$SM source mcp:<name> ok|missing`.
 2. Read `$SM config all` once per session; re-read a file after it changes.
 3. Not inside `/loop` yet → invoke the built-in `loop` skill with `/my-day:loop` (self-paced); it runs
    the first tick right away.
 
 ## Tick
-1. `$SM tick` → `schedule` (incl. `dreamDue`), `sync` (code-host delta), `act` (MR ids by verdict), `tickets`,
-   `running`, `reviewsPending`, `openQuestions`, `failed`, `fromDashboard`. Code host and reviews are done
+1. `$SM tick` → `schedule` (incl. `dreamDue` and `due`: other `<name>Schedule` slots that came
+   round, e.g. `status`), `sync` (code-host delta), `act` (MR ids by verdict), `tickets`,
+   `running`, `reviewsPending`, `openQuestions`, `approvedDrafts` (see *Outward writes*),
+   `sources` (`down`, `unchecked`), `failed`, `fromDashboard`. Code host and reviews are done
    (`covered` reviews, see QUERY-MY-REVIEWS.md, are not pending).
    `fromDashboard` = what the user did on the dashboard since the last tick: `dashboard-answer`
    (a question answered/declined there — act on it exactly as on an answer in the session; a decline's
@@ -62,6 +66,8 @@ Task: <goal and what "done" means; add "local only" when no push/MR/tracker writ
 Then `$SM dispatch <id> --agent <name> --status <new status>`. On completion:
 `$SM reconcile <id> --result '<its last message>'` → `next`: `advance` (next workflow step),
 `failure-transition` (the workflow's failure path) or `escalate` (already failed — tell the user).
+Writes a worker was not allowed to make (`WRITES.md`) come back as drafts: reconcile asks them
+(`drafts` in its answer); handle them as in *Outward writes*.
 
 **claude-p** — one detached `claude -p` per repo, started in that repo's worktree, so the repo's
 `CLAUDE.md`, `.claude/settings.json`, skills and MCP servers apply:
@@ -92,11 +98,34 @@ Then `$SM dispatch <id> --agent <name> --status <new status>`. On completion:
   `stop` (`$SM stop`, then `ScheduleWakeup stop`; the dashboard stays and shows the loop as stopped), `retry <id>` (`$SM unfail <id>`,
   `$SM set <id> attempts=0`).
 
+## Outward writes
+`WRITES.md` (when present; without it every action is `auto`) gives each outward action
+`<source>: <verb>` a policy. Before any outward action find its row, else `default`:
+- `auto` → do it.
+- `ask` → `$SM ask <id|-> "<one line: what and why>" --draft -`, with
+  `{"action","target","body"}` on stdin (never on the command line). Keep working meanwhile.
+  `approvedDrafts` (or a `dashboard-answer` whose `draft` is set) → write exactly
+  `draft.body` as approved (`$SM questions --status answered --json` has it; the user may have
+  edited it), then `$SM wrote <q-n> [--url <where>]`. Declined → don't write it.
+- `never` → don't: `$SM event <id> write-blocked "<action> → <target>"`, then the row's
+  fallback when its note names one.
+An answer in the session ("q-7 ok", "q-7 but say …") counts the same: `$SM answer <q> "ok"
+[--body "<edited text>"]`. A standing change ("stop asking before Jira comments") → `my-day:config`.
+
+## Sources
+`LOOP.md` `requires` lists what the loop cannot work without (`mcp:<server>`, `cli:<bin>`).
+- A query or call that fails on auth, connection or a missing tool → `$SM source <name> error
+  "<short reason>"`; the next success → `$SM source <name> ok`.
+- `tick` → `sources.down`: skip every step that needs that source this tick, say so in the
+  session once (when it goes down, not every tick), and never read its silence as "nothing to
+  do": no items closed as gone from scope, no "inbox empty" conclusions.
+- `sources.unchecked` → check them as in *Start* step 1.
+
 ## Dry run
 `schedule.dryRun` true → every outward action (merge, push, MR/PR create/update/rebase,
-thread reply/resolve, reviewer/assignee change, ticket assign/transition/comment, CI retry)
-becomes `$SM event <id> dry-run "would: …"`. Brainstorms stop before their tracker write
-and show it instead.
+thread reply/resolve, reviewer/assignee change, ticket assign/transition/comment, CI retry,
+message, email, page publish) becomes `$SM event <id> dry-run "would: …"`, whatever `WRITES.md`
+says, approved drafts included. Brainstorms stop before their tracker write and show it instead.
 
 ## Rules
 - Only this session writes task state. The dashboard only marks reviews done/skip, answers questions,
