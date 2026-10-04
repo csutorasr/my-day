@@ -24,7 +24,7 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
    `fromDashboard` = what the user did on the dashboard since the last tick: `dashboard-answer`
    (a question answered/declined there — act on it exactly as on an answer in the session; a decline's
    `text` is the user's reason),
-   `dashboard-request` (`action`: rebase | fix-pipeline | fix-review | merge | retry | elaborate on `item` —
+   `dashboard-request` (`action`: rebase | fix-pipeline | fix-review | merge | retry | elaborate | stop on `item` —
    the user's explicit go for that one action; do it this tick, `elaborate` → reply in the session via
    `my-day:summary`), `dashboard-pause` (just acknowledge it in the session).
 2. Read `LOOP.md`'s *Tick priority*: it names, per step, the rules file to follow (the workspace's
@@ -32,8 +32,9 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
    refresh (the syncs listed before the numbered steps) on every tick. A `LOOP.md` without a
    `## Files` section was set up before profiles: use the *Tick priority* of
    `${CLAUDE_PLUGIN_ROOT}/skills/loop/templates/dev/LOOP.md` instead.
-3. `schedule.inHours` false → skip to step 6 (read-only outside hours). `schedule.paused` true → no
-   dispatches or outward actions either; still handle `fromDashboard` answers and requests.
+3. `schedule.inHours` false → skip to step 6 (read-only outside hours) — except a `stop` request,
+   which always runs. `schedule.paused` true → no dispatches or outward actions either; still handle
+   `fromDashboard` answers and requests.
 4. Act in the order of the *Tick priority*; workers only within `schedule.freeSlots`.
    Last: `schedule.dreamDue` and no brainstorm running → run `my-day:dream` here in the
    main session (never as a worker, never in the cloud: it needs the local DB and
@@ -42,13 +43,16 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
 6. `ScheduleWakeup`: prompt `/loop /my-day:loop`, `delaySeconds` = `schedule.delaySeconds`,
    `noop` = nothing changed.
 7. Dashboard watch: unless one is already running (TaskList), arm a `Monitor` with
-   `node $SM watch-dashboard` (from the workspace root), `timeout_ms` 1800000, description
-   "my-day dashboard clicks". Each event is a click on the dashboard → run a tick right away (from
-   step 1; its `fromDashboard` holds the click) instead of waiting for the wakeup. Re-arm it when it
+   `node $SM watch` (from the workspace root), `timeout_ms` 1800000, description
+   "my-day dashboard clicks and runs". Each event is a click on the dashboard or a finished
+   `claude -p` run → run a tick right away (from step 1; its `fromDashboard` / `runs` holds it)
+   instead of waiting for the wakeup. Re-arm it when it
    expires. Outside working hours the watch keeps running: answers are recorded, actions wait for hours.
 
 ## Workers
-Agent tool, `general-purpose`, no `isolation` (workers make their own sub-repo worktree):
+`schedule`'s settings (`$SM config settings`) say how: `runner: agent` (default) or `runner: claude-p`.
+
+**agent** — Agent tool, `general-purpose`, no `isolation` (workers make their own sub-repo worktree):
 ```
 Invoke the Skill tool with "my-day:worker" and follow it.
 Kind: <develop|bug|review-fix|pipeline-fix|rebase>. Workspace root: <abs path>.
@@ -58,6 +62,26 @@ Task: <goal and what "done" means; add "local only" when no push/MR/tracker writ
 Then `$SM dispatch <id> --agent <name> --status <new status>`. On completion:
 `$SM reconcile <id> --result '<its last message>'` → `next`: `advance` (next workflow step),
 `failure-transition` (the workflow's failure path) or `escalate` (already failed — tell the user).
+
+**claude-p** — one detached `claude -p` per repo, started in that repo's worktree, so the repo's
+`CLAUDE.md`, `.claude/settings.json`, skills and MCP servers apply:
+1. Create each repo's worktree and branch exactly as DEVELOP.md says (repos in its cross-repo order).
+2. Start it with the task on stdin, in a quoted heredoc so ticket text is never expanded by the shell:
+   ```
+   node $SM run <id> --kind <kind> --chain <repo>=<worktree>[,<repo>=<worktree>…] --status <new status> <<'TASK'
+   <goal and what "done" means>
+   TASK
+   ```
+   It records the dispatch. A `failed` answer means the run could not start (already reconciled:
+   act on its `next`, and tell the user when the CLI itself is missing).
+3. Results arrive in `tick`'s `runs.finished` (`next` as above, already reconciled); `watch` wakes the
+   loop when a run's process ends. Later repos start by themselves and get the earlier results
+   (not while paused or outside working hours: they wait for the next tick that may dispatch).
+4. A `blocked` result naming a denied tool or command → ask whether to allow it in that repo's
+   `.claude/settings.json` (`permissions.allow`); on yes, add it in the repo (commit per repo rules)
+   and retry.
+5. `dashboard-request` `stop` → `$SM run-stop <id>` (kills the running repo, cancels the rest) —
+   at once, also when paused or outside working hours.
 
 ## User
 - All communication in this session (the user follows it via Remote Control); the dashboard
