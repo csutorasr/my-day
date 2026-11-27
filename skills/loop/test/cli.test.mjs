@@ -311,3 +311,89 @@ test('bootstrap in a T3 Code thread reports the host and the loop thread\'s link
     w.r('server', 'stop');
   }
 });
+
+function watcher(w, ...extra) {
+  return import('node:child_process').then(({ spawn }) => {
+    const p = spawn(process.execPath, [CLI, 'watch', '--interval', '50'], { env: { ...w.env, ...Object.assign({}, ...extra) }, stdio: ['ignore', 'pipe', 'inherit'] });
+    p.lines = [];
+    p.exited = new Promise((ok) => p.on('exit', (code) => ok(code)));
+    let buf = '';
+    p.stdout.on('data', (c) => { buf += c; const parts = buf.split('\n'); buf = parts.pop(); p.lines.push(...parts.filter(Boolean).map((l) => JSON.parse(l))); });
+    return p;
+  });
+}
+const until = async (fn, ms = 8000) => { for (const end = Date.now() + ms; ;) { const v = await fn(); if (v) return v; if (Date.now() > end) throw new Error('timed out waiting'); await new Promise((ok) => setTimeout(ok, 25)); } };
+
+test('watch started twice: the new one takes over, the old one says so and ends by itself', async () => {
+  const { readFileSync } = await import('node:fs');
+  const w = await t3Workspace();
+  w.r('upsert', '--type', 'bug', '--ext', 'jira:W-1');
+  const lock = join(w.d, 'watch.lock');
+  const held = () => { try { return JSON.parse(readFileSync(lock, 'utf8')); } catch { return undefined; } };
+  const first = await watcher(w);
+  try {
+    await until(() => held()?.pid === first.pid);
+    w.r('event', 'bug-1', 'dashboard-request', 'one');
+    await until(() => first.lines.length === 1);
+    w.r('tick'); // the loop acted on it (a watch starts from what tick has not consumed yet)
+    const second = await watcher(w);
+    try {
+      // The old watch ends on its own, with a last line naming who replaced it.
+      assert.equal(await first.exited, 0);
+      assert.deepEqual(first.lines.at(-1), { kind: 'watch-replaced', by: second.pid });
+      await until(() => held()?.pid === second.pid);
+      w.r('event', 'bug-1', 'dashboard-request', 'two');
+      await until(() => second.lines.some((l) => l.message === 'two'));
+      // Each event reached exactly one watch.
+      assert.deepEqual(first.lines.filter((l) => l.kind === 'dashboard-request').map((l) => l.message), ['one']);
+      assert.deepEqual(second.lines.filter((l) => l.kind === 'dashboard-request').map((l) => l.message), ['two']);
+      // A one-shot watch is no takeover.
+      w.r('watch', '--once');
+      assert.equal(held().pid, second.pid);
+    } finally {
+      second.kill('SIGTERM');
+      await second.exited;
+    }
+    // A watch that is stopped says so in the lock; it does not delete it.
+    assert.equal(held().pid, second.pid);
+    assert.ok(held().endedAt);
+  } finally {
+    first.kill('SIGKILL');
+  }
+});
+
+test('a watch replaced while busy reports nothing more and never claims the lock back, even after its successor ended', async () => {
+  const { chmodSync, mkdirSync, readFileSync, writeFileSync } = await import('node:fs');
+  const w = await t3Workspace();
+  w.r('upsert', '--type', 'bug', '--ext', 'jira:W-2');
+  // A claude -p chain whose process is gone; `ps` blocks until the test opens the gate, so the first
+  // watch is busy looking at runs while it is replaced.
+  mkdirSync(join(w.d, 'runs'), { recursive: true });
+  const now = new Date().toISOString();
+  writeFileSync(join(w.d, 'runs', 'bug-1-1.json'), JSON.stringify({ id: 'bug-1-1', item: 'bug-1', status: 'running', startedAt: now, steps: [{ repo: 'web', status: 'running', pid: 999999, lstart: 'x', startedAt: now }] }));
+  const ps = join(w.root, 'slow-ps');
+  const gate = join(w.root, 'ps-gate');
+  writeFileSync(ps, `#!/bin/sh\nwhile [ ! -f ${gate} ]; do sleep 0.05; done\nexit 1\n`);
+  chmodSync(ps, 0o755);
+  const lock = join(w.d, 'watch.lock');
+  const held = () => { try { return JSON.parse(readFileSync(lock, 'utf8')); } catch { return undefined; } };
+  const first = await watcher(w, { MY_DAY_PS: ps });
+  try {
+    await until(() => held()?.pid === first.pid);
+    // A second watch takes over (its own `ps` answers at once) and is stopped again, all while the
+    // first one is still waiting for `ps`.
+    const second = await watcher(w);
+    await until(() => held()?.pid === second.pid, 10_000);
+    second.kill('SIGTERM');
+    await second.exited;
+    assert.ok(held().endedAt);
+    writeFileSync(gate, '');
+    assert.equal(await first.exited, 0);
+    // No run-finished from the old watch (the next watch reports it), and no claim on the lock.
+    assert.deepEqual(first.lines, [{ kind: 'watch-replaced', by: second.pid }]);
+    assert.equal(held().pid, second.pid);
+  } finally {
+    writeFileSync(gate, '');
+    first.kill('SIGKILL');
+  }
+});

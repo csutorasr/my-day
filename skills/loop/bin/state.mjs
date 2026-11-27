@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // my-day state CLI — the only door to .my-day/state.db. Run with no args for help.
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -23,7 +23,8 @@ Loop       bootstrap [--new-session]  config check, DB, dashboard, host (T3 Code
            pause | resume             stop / restart dispatching (the dashboard has the same button)
            stop                       mark this loop stopped (the dashboard hides it by default)
            watch [--interval ms]      stream dashboard clicks and finished claude -p runs as JSON lines
-                                      (run as a monitor; watch-dashboard is the same)
+                                      (run as a monitor; watch-dashboard is the same). Safe to start
+                                      again: the new watch replaces the old one.
            dispatch <id> --agent <name> [--status s]   record a started worker (attempts++)
            reconcile <id> [--result '<json|message>'] (or stdin)   apply a worker's report
 Runs       run <id> --kind <k> --chain <repo>=<worktree>[,…] [--status s] < task   claude -p per repo, in order
@@ -450,19 +451,55 @@ try {
       // Read-only: the cursor is local; `tick` still consumes the events (lastDashboardEventId).
       const KINDS = ['dashboard-answer', 'dashboard-request', 'dashboard-pause'];
       const every = Number(opt.interval ?? 1000);
+      // One watch per loop: a session cannot always tell whether its monitor still runs (no TaskList in
+      // T3 Code; a compacted context), so starting again must be safe. The newest watch owns
+      // watch.lock (written as watch.lock.<pid>, then renamed); an older one sees that, says
+      // `watch-replaced` and ends. The lock is never deleted — an ended watch marks it `endedAt` — so
+      // a watch whose lock was taken can never find it gone and claim it back. `--once` takes no lock.
+      const lock = join(dir, 'watch.lock');
+      const readLock = () => { try { return JSON.parse(readFileSync(lock, 'utf8')); } catch { return undefined; } };
+      const writeLock = (v) => { writeFileSync(`${lock}.${process.pid}`, JSON.stringify(v)); renameSync(`${lock}.${process.pid}`, lock); };
+      const startedAt = new Date().toISOString();
+      const claim = () => writeLock({ pid: process.pid, startedAt });
+      const mine = () => {
+        const l = readLock();
+        if (l === undefined) { claim(); return true; } // never there, or deleted by hand: nobody took it
+        return l.pid === process.pid;
+      };
+      const replaced = () => {
+        process.stdout.write(JSON.stringify({ kind: 'watch-replaced', by: readLock()?.pid ?? null }) + '\n');
+        process.exit(0);
+      };
+      // Ownership is checked again right before every line: the loop must hear an event from one watch only.
+      const emit = (line) => {
+        if (!opt.once && !mine()) replaced();
+        process.stdout.write(JSON.stringify(line) + '\n');
+      };
+      if (!opt.once) {
+        db(); // creates the state dir
+        const before = readLock();
+        claim();
+        const end = () => { if (readLock()?.pid === process.pid) writeLock({ pid: process.pid, startedAt, endedAt: new Date().toISOString() }); process.exit(0); };
+        for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, end);
+        // Let the watch this one replaces leave first, so no event is reported by both.
+        const gone = (pid) => { try { process.kill(pid, 0); return false; } catch { return true; } };
+        const prev = before && !before.endedAt && before.pid !== process.pid ? before.pid : null;
+        for (let waited = 0; prev && !gone(prev) && waited < 3000; waited += 50) await new Promise((ok) => setTimeout(ok, 50));
+      }
       let cursor = Number(S.getMeta(db(), 'lastDashboardEventId') ?? 0);
       const reported = new Set();
       for (;;) {
+        if (!opt.once && !mine()) replaced();
         for (const e of S.listEvents(db(), { afterId: cursor })) {
           cursor = e.id;
-          if (KINDS.includes(e.kind)) process.stdout.write(JSON.stringify({ kind: e.kind, item: e.item_id, message: e.message, ...(e.data ?? {}) }) + '\n');
+          if (KINDS.includes(e.kind)) emit({ kind: e.kind, item: e.item_id, message: e.message, ...(e.data ?? {}) });
         }
         // A claude -p run whose process ended: the next tick collects it.
         for (const f of finishedSteps(dir)) {
           const key = `${f.chain}:${listChains(dir).find((c) => c.id === f.chain)?.steps.findIndex((x) => x.status === 'running')}`;
           if (reported.has(key)) continue;
           reported.add(key);
-          process.stdout.write(JSON.stringify({ kind: 'run-finished', item: f.item, chain: f.chain }) + '\n');
+          emit({ kind: 'run-finished', item: f.item, chain: f.chain });
         }
         if (opt.once) break;
         await new Promise((ok) => setTimeout(ok, every));
