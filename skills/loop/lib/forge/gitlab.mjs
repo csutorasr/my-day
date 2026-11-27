@@ -1,6 +1,7 @@
 // GitLab provider (via `glab api`). Output shape shared with github.mjs.
 import { execFileSync } from 'node:child_process';
 import { isAiReviewer } from './ai-reviewer.mjs';
+import { mineTerms } from './mine-by.mjs';
 
 const api = (endpoint) =>
   JSON.parse(execFileSync(process.env.GLAB_BIN ?? 'glab', ['api', endpoint], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
@@ -34,7 +35,17 @@ function summarize(m) {
 
 const inGroup = (group) => (m) => !group || m.references.full.startsWith(group);
 
-export const mine = ({ group }) => api('merge_requests?state=opened&scope=assigned_to_me&per_page=100').filter(inGroup(group)).map(summarize);
+// `by` (LOOP.md `mineBy`, lib/forge/mine-by.mjs): which open MRs are mine.
+const MINE = { assignee: 'scope=assigned_to_me', author: 'scope=created_by_me', unassigned: 'scope=all&assignee_id=None' };
+
+export function mine({ group, by }) {
+  const seen = new Set();
+  return mineTerms(by, group)
+    .flatMap((t) => api(`merge_requests?state=opened&${MINE[t]}&per_page=100`))
+    .filter((m) => !seen.has(m.references.full) && seen.add(m.references.full))
+    .filter(inGroup(group))
+    .map(summarize);
+}
 
 export const reviews = ({ group }) =>
   api(`merge_requests?state=opened&scope=all&reviewer_username=${me()}&per_page=100`)

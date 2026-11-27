@@ -26,7 +26,7 @@ export function sync(db, settings, { now = Date.now(), provider } = {}) {
   const delta = { mrs: { new: [], changed: [], vanished: [] }, reviews: { new: [], done: [], reopened: [], covered: [], gone: [] } };
 
   // ---- my MRs/PRs
-  const mine = p.mine({ group: settings.group });
+  const mine = p.mine({ group: settings.group, by: settings.mineBy });
   const seen = new Set();
   for (const m of mine) {
     seen.add(m.ext);

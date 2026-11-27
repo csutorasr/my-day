@@ -54,7 +54,7 @@ function fakeProvider() {
     states: { 2: 'merged' },
     approved: new Set(),
     status: {}, // per-iid reviewStatus overrides
-    mine() { return p.mineList; },
+    mine(opts) { p.mineOpts = opts; return p.mineList; },
     reviews() { return p.reviewList; },
     mr(project, iid) { return { ...mr(`${project}!${iid}`), ...base, approved: false, unresolved: [{ discussionId: 'd', author: 'bot', fromAi: true, body: 'x'.repeat(500) }], pipeline: { status: 'success', url: 'https://g/p/1' } }; },
     state(project, iid) { return p.states[iid] ?? 'opened'; },
@@ -85,6 +85,17 @@ test('sync: MRs get verdicts, parents and vanish on merge; reviews batch-notify 
   assert.deepEqual(d2.reviews.done, [S.getItem(db, 'gitlab:g/api!5').id]);
   assert.deepEqual(d2.reviews.gone, [S.getItem(db, 'gitlab:g/api!6').id]);
   assert.equal(d2.mrs.new.length, 0);
+});
+
+test('sync: passes mineBy and group to the provider', () => {
+  const db = S.openDb(join(mkdtempSync(join(tmpdir(), 'myday-mineby-')), 'state.db'));
+  const p = fakeProvider();
+  sync(db, { ...settings, group: 'g/', mineBy: 'both' }, { provider: p });
+  assert.deepEqual(p.mineOpts, { group: 'g/', by: 'both' });
+});
+
+test('config: mineBy defaults to assignee (unchanged behaviour)', () => {
+  assert.equal(DEFAULTS.mineBy, 'assignee');
 });
 
 function coveredSetup(hideCoveredReviews = true) {

@@ -13,7 +13,14 @@ GitLab workspace); adapt them to what the user actually uses — never assume th
 1. **Issue tracker** — "Where do your tickets live?" Options from what's connected:
    Jira · GitHub Issues · GitLab Issues · Linear · Azure Boards · other · none (MR/PR-only mode).
 2. **Code host** — GitLab or GitHub (`forge.mjs --provider`), and the group/org prefix
-   (`--group`) whose MRs/PRs count.
+   (`--group`) whose MRs/PRs count. Then which MRs/PRs are the user's (`mineBy`, a
+   comma-separated list): the ones assigned to them (`assignee`, default), the ones they opened
+   (`author`), and/or the ones nobody is assigned to (`unassigned`, e.g. a bot's dependency
+   updates). Check with `forge.mjs mine --mine-by …`: on GitHub, authors rarely assign
+   themselves, so propose `both` (= `author, assignee`) when `assignee` finds none of their open
+   PRs. Offer `unassigned` only for a group the user alone works in, or say plainly that the loop
+   then rebases, fixes and merges a teammate's unassigned MRs as its own (merge gates and
+   `WRITES.md` still apply).
 3. **Ticket ↔ MR link** — how an MR names its ticket (branch/title). Propose a regex from
    recent MRs (`KEY-123` → default; `#123` for GitHub/GitLab issues) → `--ticket-pattern`.
 

@@ -4,6 +4,7 @@
 import { execFileSync } from 'node:child_process';
 import { ticketKeys } from './gitlab.mjs';
 import { isAiReviewer } from './ai-reviewer.mjs';
+import { mineTerms } from './mine-by.mjs';
 
 const gh = (args) =>
   JSON.parse(execFileSync(process.env.GH_BIN ?? 'gh', ['api', ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
@@ -37,8 +38,12 @@ function summarize(pr, project) {
   };
 }
 
-function search(q, group) {
-  const items = api(`search/issues?q=${q}${scopeQualifier(group)}&per_page=100`).items ?? [];
+// Every query's hits, once each (a PR can match several), in first-seen order.
+function search(queries, group) {
+  const seen = new Set();
+  const items = queries
+    .flatMap((q) => api(`search/issues?q=${q}${scopeQualifier(group)}&per_page=100`).items ?? [])
+    .filter((i) => { const k = `${i.repository_url}#${i.number}`; return !seen.has(k) && seen.add(k); });
   return items
     .filter((i) => !group || `${repoOf(i.repository_url)}/`.startsWith(`${group.replace(/\/$/, '')}/`))
     .map((i) => {
@@ -47,8 +52,10 @@ function search(q, group) {
     });
 }
 
-export const mine = ({ group }) => search('is:pr+is:open+assignee:@me', group);
-export const reviews = ({ group }) => search('is:pr+is:open+draft:false+review-requested:@me', group);
+// `by` (LOOP.md `mineBy`, lib/forge/mine-by.mjs): which open PRs are mine.
+const MINE = { assignee: 'assignee:@me', author: 'author:@me', unassigned: 'no:assignee' };
+export const mine = ({ group, by }) => search(mineTerms(by, group).map((t) => `is:pr+is:open+${MINE[t]}`), group);
+export const reviews = ({ group }) => search(['is:pr+is:open+draft:false+review-requested:@me'], group);
 
 const MERGE_STATE = {
   clean: 'mergeable',

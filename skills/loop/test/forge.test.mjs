@@ -25,6 +25,8 @@ const mr = (full, extra = {}) => ({
 const glab = fakeCli('glab', {
   user: { username: 'me' },
   'merge_requests?state=opened&scope=assigned_to_me&per_page=100': [mr('grp/app/web!1'), mr('other/x!2')],
+  'merge_requests?state=opened&scope=created_by_me&per_page=100': [mr('grp/app/web!10'), mr('grp/app/web!1')],
+  'merge_requests?state=opened&scope=all&assignee_id=None&per_page=100': [mr('grp/app/web!10'), mr('grp/app/bot!11'), mr('other/y!12')],
   'merge_requests?state=opened&scope=all&reviewer_username=me&per_page=100': [mr('grp/app/api!3'), mr('grp/app/api!4', { draft: true })],
   'projects/grp%2Fapp%2Fweb/merge_requests/1': { ...mr('grp/app/web!1'), detailed_merge_status: 'mergeable', blocking_discussions_resolved: false, has_conflicts: false, sha: 'abc', head_pipeline: { id: 9, status: 'success', sha: 'abc', web_url: 'https://g/p/9' }, reviewers: [{ username: 'bob' }] },
   'projects/grp%2Fapp%2Fweb/merge_requests/1/approvals': { approved: false, approved_by: [] },
@@ -55,6 +57,16 @@ test('gitlab: mine filters by group and extracts ticket keys', () => {
   assert.deepEqual(list.map((m) => m.ext), ['gitlab:grp/app/web!1']);
   assert.deepEqual(list[0].ticketKeys, ['ABC-7']);
   assert.equal(list[0].repo, 'web');
+});
+
+test('gitlab: mine-by author / both (created by me, assigned to me, once each)', () => {
+  assert.deepEqual(gl('mine', '--group', 'grp/app/', '--mine-by', 'author').map((m) => m.ext), ['gitlab:grp/app/web!10', 'gitlab:grp/app/web!1']);
+  assert.deepEqual(gl('mine', '--group', 'grp/app/', '--mine-by', 'both').map((m) => m.ext), ['gitlab:grp/app/web!10', 'gitlab:grp/app/web!1']);
+  assert.deepEqual(gl('mine', '--group', 'grp/app/', '--mine-by', 'assignee').map((m) => m.ext), ['gitlab:grp/app/web!1']);
+});
+
+test('gitlab: mine-by unassigned adds MRs nobody is assigned to, in the group', () => {
+  assert.deepEqual(gl('mine', '--group', 'grp/app/', '--mine-by', 'assignee, unassigned').map((m) => m.ext), ['gitlab:grp/app/web!1', 'gitlab:grp/app/web!10', 'gitlab:grp/app/bot!11']);
 });
 
 test('gitlab: reviews skip drafts', () => {
@@ -100,6 +112,10 @@ const item = (repo, n) => ({ number: n, repository_url: `https://api.github.com/
 const gh = fakeCli('gh', {
   user: { login: 'me' },
   'search/issues?q=is:pr+is:open+assignee:@me+org:acme&per_page=100': { items: [item('acme/web', 5), item('acmeish/x', 6)] },
+  'search/issues?q=is:pr+is:open+author:@me+org:acme&per_page=100': { items: [item('acme/web', 8), item('acme/web', 5)] },
+  'search/issues?q=is:pr+is:open+no:assignee+org:acme&per_page=100': { items: [item('acme/web', 8), item('acme/deps', 9)] },
+  'repos/acme/deps/pulls/9': pr('acme/deps', 9),
+  'repos/acme/web/pulls/8': pr('acme/web', 8),
   'search/issues?q=is:pr+is:open+draft:false+review-requested:@me+org:acme&per_page=100': { items: [item('acme/api', 7)] },
   'repos/acme/web/pulls/5': pr('acme/web', 5, { mergeable_state: 'behind' }),
   'repos/acmeish/x/pulls/6': pr('acmeish/x', 6),
@@ -130,6 +146,23 @@ test('github: mine scopes to the org and uses the shared shape', () => {
   assert.deepEqual(list.map((m) => m.ext), ['github:acme/web#5']);
   assert.equal(list[0].sourceBranch, 'feat/ABC-5');
   assert.deepEqual(list[0].ticketKeys, ['ABC-5']);
+});
+
+test('github: mine-by author / both (opened by me, assigned to me, once each)', () => {
+  assert.deepEqual(hub('mine', '--group', 'acme/', '--mine-by', 'author').map((m) => m.ext), ['github:acme/web#8', 'github:acme/web#5']);
+  assert.deepEqual(hub('mine', '--group', 'acme/', '--mine-by', 'both').map((m) => m.ext), ['github:acme/web#8', 'github:acme/web#5']);
+});
+
+test('github: mine-by author, unassigned adds PRs nobody is assigned to (a bot\'s), once each', () => {
+  assert.deepEqual(hub('mine', '--group', 'acme/', '--mine-by', 'author,unassigned').map((m) => m.ext), ['github:acme/web#8', 'github:acme/web#5', 'github:acme/deps#9']);
+});
+
+test('mine-by: an unknown value, or unassigned without a group, is an error, not an empty list', () => {
+  const run = (provider, ...a) => execFileSync(process.execPath, [BIN, '--provider', provider, 'mine', ...a], { env: { ...process.env, GH_BIN: gh, GLAB_BIN: glab }, encoding: 'utf8', stdio: 'pipe' });
+  for (const provider of ['github', 'gitlab']) {
+    assert.throws(() => run(provider, '--mine-by', 'author, owner'), (e) => /unknown mineBy owner/.test(e.stderr));
+    assert.throws(() => run(provider, '--mine-by', 'unassigned'), (e) => /mineBy unassigned needs a group/.test(e.stderr));
+  }
 });
 
 test('github: reviews', () => {
