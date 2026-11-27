@@ -12,7 +12,12 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
 
 ## Start
 1. `$SM bootstrap --new-session` on the first call of a session, `$SM bootstrap` after.
-   `missing` non-empty → run the `my-day:setup` skill first. First call: `open <server.url>`.
+   `missing` non-empty → run the `my-day:setup` skill first.
+   `host.name` says where this session runs: `t3` = a T3 Code thread (`host.link` opens it),
+   otherwise Claude Code. First call: show the dashboard — in T3 Code with
+   `mcp__t3-code__preview_open` when available (a deferred tool: load it with ToolSearch;
+   `{"target":{"kind":"environment-port","port":<server.port>}}` opens it in an in-app tab),
+   otherwise `open <server.url>`.
    `sources.checkMcp` (first call of a session) → for each `mcp:<name>`, look for its tools
    (`mcp__*<name>*`, deferred ones included) and report `$SM source mcp:<name> ok|missing`.
 2. Read `$SM config all` once per session; re-read a file after it changes.
@@ -46,12 +51,14 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
 5. `$SM prune` once a day.
 6. `ScheduleWakeup`: prompt `/loop /my-day:loop`, `delaySeconds` = `schedule.delaySeconds`,
    `noop` = nothing changed.
-7. Dashboard watch: unless one is already running (TaskList), arm a `Monitor` with
-   `node $SM watch` (from the workspace root), `timeout_ms` 1800000, description
-   "my-day dashboard clicks and runs". Each event is a click on the dashboard or a finished
-   `claude -p` run → run a tick right away (from step 1; its `fromDashboard` / `runs` holds it)
-   instead of waiting for the wakeup. Re-arm it when it
-   expires. Outside working hours the watch keeps running: answers are recorded, actions wait for hours.
+7. Dashboard watch: arm a `Monitor` with `node $SM watch` (from the workspace root),
+   `timeout_ms` 1800000, description "my-day dashboard clicks and runs" — on the session's first
+   tick, when the previous one ended, and whenever you cannot tell that one still runs (never
+   look for it with TaskList: T3 Code has none). Arming it again is safe: the new watch takes
+   over and the old one prints `watch-replaced` and ends — ignore that line, don't re-arm for it.
+   Every other line is a click on the dashboard or a finished `claude -p` run → run a tick right
+   away (from step 1; its `fromDashboard` / `runs` holds it) instead of waiting for the wakeup.
+   Outside working hours the watch keeps running: answers are recorded, actions wait for hours.
 
 ## Workers
 `schedule`'s settings (`$SM config settings`) say how: `runner: agent` (default) or `runner: claude-p`.
@@ -90,8 +97,8 @@ Writes a worker was not allowed to make (`WRITES.md`) come back as drafts: recon
    at once, also when paused or outside working hours.
 
 ## User
-- All communication in this session (the user follows it via Remote Control); the dashboard
-  mirrors it and can answer questions, pause, and send per-item quick actions (see `fromDashboard`). Ask with `$SM ask <id> "<q>"` and in chat as "q-4 · bug-2 (ABC-812 …): …";
+- All communication in the loop's session (its T3 Code thread, on desktop or phone, or Remote
+  Control in Claude Code); the dashboard mirrors it and can answer questions, pause, and send per-item quick actions (see `fromDashboard`). Ask with `$SM ask <id> "<q>"` and in chat as "q-4 · bug-2 (ABC-812 …): …";
   record with `$SM answer` / `$SM decline`; never re-ask; keep working meanwhile.
 - An answer or instruction that sets a standing rule → `my-day:config`.
 - `elaborate <id>` / `summary …` → `my-day:summary`. `dream` → `my-day:dream`. `pause` (`$SM pause`, no dispatch), `resume` (`$SM resume`),

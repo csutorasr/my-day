@@ -52,6 +52,8 @@ In a git repo root append to `.gitignore` (ask before editing a tracked file; ot
 .my-day/*.local.md
 .my-day/state.db*
 .my-day/dreams/
+.my-day/runs/
+.my-day/watch.lock*
 .worktrees/
 ```
 Web push (optional): `npm install --prefix ${CLAUDE_PLUGIN_ROOT}/skills/loop/server --no-audit --no-fund`
