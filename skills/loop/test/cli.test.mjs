@@ -291,6 +291,8 @@ test('bootstrap in a T3 Code thread reports the host and the loop thread\'s link
   try {
     const b = boot(inT3, '--new-session');
     assert.deepEqual(b.host, { name: 't3', threadId, link: `https://app.t3.codes/threads/fake-env/${encodeURIComponent(threadId)}` });
+    // In T3 Code the first bootstrap of a session also checks the t3 CLI and the workspace project.
+    assert.deepEqual(b.t3, { bin: FAKE_T3, ok: true, version: 'v0.0.0-fake', workspaceProject: true });
     assert.deepEqual(meta(), { host: 't3', hostThreadId: threadId, hostThreadLink: b.host.link });
     // Later bootstraps of the session reuse the stored link instead of asking t3 again.
     const before = shows();
@@ -395,5 +397,136 @@ test('a watch replaced while busy reports nothing more and never claims the lock
   } finally {
     writeFileSync(gate, '');
     first.kill('SIGKILL');
+  }
+});
+
+// ---- runner: t3 through the CLI.
+
+const callsOf = async (w, verb) => {
+  const { existsSync, readFileSync } = await import('node:fs');
+  const f = join(w.root, 't3-server', 'calls.jsonl');
+  return existsSync(f) ? readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((c) => c.argv.slice(0, 2).join(' ') === verb).length : 0;
+};
+
+test('runner: t3 makes the t3 CLI a source, checked once per session: ok, down with the reason, or missing', async () => {
+  const w = await t3Workspace('runner: t3\n');
+  const boot = (env, ...a) => JSON.parse(execFileSync(process.execPath, [CLI, 'bootstrap', ...a], { env, encoding: 'utf8' }));
+  try {
+    const ok = boot(w.env, '--new-session');
+    assert.deepEqual(ok.sources.cli, { 'cli:t3': 'ok' });
+    // Not a T3 project yet: setup offers to register it.
+    assert.equal(ok.t3.workspaceProject, false);
+    assert.equal(ok.host.name, 'claude-code');
+    // Later bootstraps of the session keep that answer instead of asking t3 again.
+    const asked = await callsOf(w, 'thread list');
+    const again = boot({ ...w.env, FAKE_T3_DOWN: '1' });
+    assert.deepEqual([again.sources.cli, again.t3], [{ 'cli:t3': 'ok' }, undefined]);
+    assert.equal(await callsOf(w, 'thread list'), asked);
+    const down = boot({ ...w.env, FAKE_T3_DOWN: '1' }, '--new-session');
+    assert.deepEqual(down.sources.cli, { 'cli:t3': 'error' });
+    assert.match(down.t3.error, /No running T3 Code server/);
+    assert.match(w.r('sources'), /cli:t3\s+error.*No running T3 Code server/);
+    assert.deepEqual(JSON.parse(w.r('tick')).sources.down.map((x) => x.name), ['cli:t3']);
+    assert.deepEqual(boot({ ...w.env, T3_BIN: '/nonexistent/t3' }, '--new-session').sources.cli, { 'cli:t3': 'missing' });
+    // Outside T3 Code and without runner: t3 nothing asks t3.
+    const plain = await t3Workspace();
+    const before = await callsOf(plain, 'thread list');
+    assert.equal(boot(plain.env, '--new-session').t3, undefined);
+    assert.equal(await callsOf(plain, 'thread list'), before);
+    plain.r('server', 'stop');
+  } finally {
+    w.r('server', 'stop');
+  }
+});
+
+test('t3 check / register, and t3 remove only for a worker worktree the runner registered', async () => {
+  const w = await t3Workspace('runner: t3\n');
+  const wt = join(w.root, 'wt', 'web');
+  const fails = (...a) => spawnSync(process.execPath, [CLI, ...a], { env: w.env, encoding: 'utf8' });
+  let c = JSON.parse(w.r('t3', 'check', wt));
+  assert.deepEqual([c.ok, c.projects], [true, { [w.root]: false, [wt]: false }]);
+  assert.deepEqual(JSON.parse(w.r('t3', 'register', w.root, '--title', 'client-a')), { registered: w.root, added: true });
+  assert.deepEqual(JSON.parse(w.r('t3', 'register', w.root)), { registered: w.root, added: false });
+  c = JSON.parse(w.r('t3', 'check', wt));
+  assert.deepEqual(c.projects, { [w.root]: true, [wt]: true });
+  // The workspace (or a folder holding it) and a folder my-day did not register are never removed.
+  for (const target of [w.root, join(w.root, '..')]) assert.match(fails('t3', 'remove', target).stderr, /is the workspace or holds it/);
+  assert.match(fails('t3', 'remove', wt).stderr, /is not a T3 project the t3 runner registered/);
+  // A worker on the worktree registers it; while its chain runs the project stays.
+  w.r('upsert', '--type', 'bug', '--ext', 'jira:RM-1');
+  execFileSync(process.execPath, [CLI, 'run', 'bug-1', '--kind', 'bug', '--chain', `web=${wt}`], { env: w.env, encoding: 'utf8', input: 'ok\n' });
+  assert.match(fails('t3', 'remove', wt).stderr, /is still used by bug-1-1/);
+  w.r('tick');
+  assert.deepEqual(JSON.parse(w.r('t3', 'remove', wt)), { removed: wt });
+  assert.match(fails('t3', 'remove', wt).stderr, /my-day: ProjectNotFoundError: No active project found/);
+  // The workspace project and its threads are still there.
+  assert.equal(JSON.parse(w.r('t3', 'check')).projects[w.root], true);
+  // With t3Project: containing the worktrees are no projects of their own: nothing to remove.
+  const { writeFileSync, readFileSync } = await import('node:fs');
+  writeFileSync(join(w.d, 'LOOP.md'), readFileSync(join(w.d, 'LOOP.md'), 'utf8').replace('runner: t3', 'runner: t3\nt3Project: containing'));
+  assert.match(fails('t3', 'remove', wt).stderr, /t3Project is containing/);
+});
+
+test('run as T3 threads → watch reports the finished thread → tick collects it; runs and show carry the link', async () => {
+  const w = await t3Workspace('runner: t3\nt3Model: claude-opus-5-5\nt3ModelBug: claude-sonnet-5-5\n');
+  w.r('upsert', '--type', 'bug', '--ext', 'jira:RUN-9', '--title', 'Totals are off');
+  const run = (task, ...extra) => JSON.parse(execFileSync(process.execPath, [CLI, 'run', 'bug-1', '--kind', 'bug', '--chain', `web=${join(w.root, 'wt', 'web')}`, '--status', 'developing', ...extra], { env: w.env, encoding: 'utf8', input: `${task}\n` }));
+  const started = run('ok');
+  assert.equal(started.started.repo, 'web');
+  const link = `https://app.t3.codes/threads/fake-env/${encodeURIComponent(started.started.thread)}`;
+  assert.equal(JSON.parse(w.r('get', 'bug-1')).agent_id, `run:${started.chain}`);
+  const thread = Object.values(JSON.parse((await import('node:fs')).readFileSync(join(w.root, 't3-server', 'state.json'), 'utf8')).threads)[0];
+  assert.deepEqual([thread.title, thread.provider, thread.model], [`RUN-9 bug · web (${started.chain}): Totals are off`, 'claudeAgent', 'claude-sonnet-5-5']);
+  assert.match(w.r('runs'), new RegExp(`bug-1-1\\s+running\\s+web running\\n  web: ${started.started.thread}`));
+  assert.deepEqual(w.r('watch', '--once').split('\n').filter(Boolean).map((l) => JSON.parse(l)), [{ kind: 'run-finished', item: 'bug-1', chain: started.chain }]);
+  const t = JSON.parse(w.r('tick'));
+  assert.deepEqual(t.runs.finished.map((f) => [f.item, f.next]), [['bug-1', 'advance']]);
+  assert.deepEqual([t.runs.waiting, t.runs.stillRunning], [[], []]);
+  assert.equal(JSON.parse(w.r('get', 'bug-1')).agent_id, null);
+  // From the first look at the thread on, its link is in `runs` and among the item's links.
+  assert.match(w.r('runs'), new RegExp(`  web: ${link.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assert.match(w.r('show', 'bug-1'), /\[thread\] web worker \(attempt 1\) https:\/\/app\.t3\.codes/);
+
+  // A worker that asks: watch and tick both say so, with the thread to open; run-stop is honest.
+  const asked = run('ask');
+  const askedLink = `https://app.t3.codes/threads/fake-env/${encodeURIComponent(asked.started.thread)}`;
+  const line = w.r('watch', '--once').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.deepEqual(line, [{ kind: 'run-waiting', item: 'bug-1', chain: asked.chain, repo: 'web', link: askedLink }]);
+  assert.deepEqual(JSON.parse(w.r('tick')).runs.waiting.map((x) => [x.item, x.repo, x.link]), [['bug-1', 'web', askedLink]]);
+  assert.match(w.r('runs'), /\(waiting for your answer\)/);
+  const stopped = JSON.parse(w.r('run-stop', 'bug-1'));
+  assert.equal(stopped.stopped, true);
+  assert.equal(stopped.stillRunning[0].link, askedLink);
+  assert.match(w.r('runs'), /bug-1-2\s+stopped\s+web stopped\n  web: \S+  \(let go of; may still be running\)/);
+  // That thread still waits in the worktree: a new run there is refused, naming it, until --force.
+  const refused = spawnSync(process.execPath, [CLI, 'run', 'bug-1', '--kind', 'bug', '--chain', `web=${join(w.root, 'wt', 'web')}`, '--task', 'ok'], { env: w.env, encoding: 'utf8' });
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, new RegExp(`my-day: not started: the web worker of ${asked.chain} is still waiting in its T3 thread: ${askedLink.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\. Stop it in T3 Code first, or run again with --force\\.`));
+  assert.ok(run('ok', '--force').started);
+
+  // --runner overrides the setting for one run; an unknown one is refused.
+  const bad = spawnSync(process.execPath, [CLI, 'run', 'bug-1', '--kind', 'bug', '--chain', `web=${join(w.root, 'wt', 'web')}`, '--runner', 'nope', '--task', 'ok'], { env: w.env, encoding: 'utf8' });
+  assert.match(bad.stderr, /unknown runner nope/);
+});
+
+test('watch: a finished step is reported once, also after its chain moved on to the next repo', async () => {
+  const w = await t3Workspace('runner: t3\nt3PollSeconds: 3600\nworkingHours: 00:00-24:00\nworkingDays: Sun-Sat\n');
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(join(w.root, 'wt', 'api'), { recursive: true });
+  w.r('upsert', '--type', 'bug', '--ext', 'jira:W-3');
+  // api reports at once; web keeps working. Threads are asked about once (t3PollSeconds), so the
+  // watch keeps its first answer while the tick moves the chain on.
+  const started = JSON.parse(execFileSync(process.execPath, [CLI, 'run', 'bug-1', '--kind', 'bug', '--chain', `api=${join(w.root, 'wt', 'api')},web=${join(w.root, 'wt', 'web')}`], { env: w.env, encoding: 'utf8', input: 'ok\n' }));
+  const watch = await watcher(w);
+  try {
+    await until(() => watch.lines.length === 1);
+    assert.deepEqual(watch.lines, [{ kind: 'run-finished', item: 'bug-1', chain: started.chain }]);
+    const t = JSON.parse(w.r('tick'));
+    assert.deepEqual(t.runs.started.map((s) => s.repo), ['web']);
+    await new Promise((ok) => setTimeout(ok, 400));
+    assert.deepEqual(watch.lines.map((l) => l.kind), ['run-finished']);
+  } finally {
+    watch.kill('SIGTERM');
+    await watch.exited;
   }
 });

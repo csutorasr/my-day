@@ -2,7 +2,7 @@
 // my-day state CLI — the only door to .my-day/state.db. Run with no args for help.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import * as S from '../lib/db.mjs';
 import { resolveRange } from '../lib/range.mjs';
@@ -11,7 +11,7 @@ import * as server from '../lib/serverctl.mjs';
 import { inWorkingHours, schedule } from '../lib/schedule.mjs';
 import { sync } from '../lib/sync.mjs';
 import { dispatch, reconcile } from '../lib/reconcile.mjs';
-import { collectRuns, finishedSteps, listChains, startChain, stopChain } from '../lib/runs.mjs';
+import { collectRuns, finishedSteps, hasThreadRuns, listChains, startChain, stopChain, threadSignals } from '../lib/runs.mjs';
 import * as T3 from '../lib/t3.mjs';
 import { forget, homeDir, homeSettings, listLoops, loopStatus, migrate, register } from '../lib/home.mjs';
 
@@ -22,13 +22,22 @@ Loop       bootstrap [--new-session]  config check, DB, dashboard, host (T3 Code
            sync | schedule            the two halves of tick
            pause | resume             stop / restart dispatching (the dashboard has the same button)
            stop                       mark this loop stopped (the dashboard hides it by default)
-           watch [--interval ms]      stream dashboard clicks and finished claude -p runs as JSON lines
-                                      (run as a monitor; watch-dashboard is the same). Safe to start
-                                      again: the new watch replaces the old one.
+           watch [--interval ms]      stream dashboard clicks, finished runs and T3 worker threads that wait
+                                      for an answer (or got one) as JSON lines (run as a monitor;
+                                      watch-dashboard is the same). Safe to start again: the new
+                                      watch replaces the old one.
            dispatch <id> --agent <name> [--status s]   record a started worker (attempts++)
            reconcile <id> [--result '<json|message>'] (or stdin)   apply a worker's report
-Runs       run <id> --kind <k> --chain <repo>=<worktree>[,…] [--status s] < task   claude -p per repo, in order
-           runs [--json] | run-stop <id>   claude -p chains (runner: claude-p); stop an item's chain
+Runs       run <id> --kind <k> --chain <repo>=<worktree>[,…] [--status s] [--runner t3|claude-p] [--force] < task
+                                      one worker per repo, in order: a T3 Code thread (runner: t3) or claude -p.
+                                      Refused while a T3 thread my-day let go of may still work on the
+                                      item or a worktree (--force starts anyway)
+           runs [--json] | run-stop <id>   the chains, with each T3 thread's link; stop an item's chain
+                                      (claude -p is killed; a T3 thread is let go of and keeps running)
+T3 Code    t3 check [path …]          the t3 CLI, its server, and whether the workspace / paths are T3 projects
+           t3 register <path> [--title t]   add a folder as a T3 project (t3 project add)
+           t3 remove <worktree>       remove a worker worktree's T3 project AND its threads (t3 project
+                                      remove --force); only a worktree the t3 runner registered
 
 Items      upsert --type bug|story|subtask|mr|review --ext <jira:KEY|gitlab:path!iid> [--title] [--url]
                   [--status] [--parent <id>] [--repos a,b] [--data '{json}']
@@ -40,7 +49,7 @@ Items      upsert --type bug|story|subtask|mr|review --ext <jira:KEY|gitlab:path
            delete <id|ext> … | delete --closed [--type t]   remove items (links too; events kept)
            attempt <id>              (attempts++)
            fail <id> --reason "…" | unfail <id>
-           link <id> --kind mr|pipeline|jira|spec|other --url <url> [--label]
+           link <id> --kind mr|pipeline|jira|spec|thread|other --url <url> [--label]
 Questions  ask <id|-> "text" [--draft '<json>'|-]   a draft = an outward write to approve: {action, target, body}
            answer <q-n> "text" [--body "…"] | decline <q-n> | questions [--status open]
            wrote <q-n> [--url u]      the approved draft was written (tick stops listing it)
@@ -71,6 +80,7 @@ const { values: opt, positionals: pos } = parseArgs({
     json: { type: 'boolean' }, interval: { type: 'string' }, once: { type: 'boolean' },
     chain: { type: 'string' }, task: { type: 'string' },
     agent: { type: 'string' }, result: { type: 'string' }, report: { type: 'string' }, 'new-session': { type: 'boolean' },
+    runner: { type: 'string' }, force: { type: 'boolean' },
     draft: { type: 'string' }, body: { type: 'string' },
   },
 });
@@ -352,8 +362,8 @@ try {
       const missing = findMissing(dir);
       if (missing.length) { out({ missing }); break; }
       const settings = loopSettings(dir);
-      // Subagents die with their session; claude -p runs (agent run:<chain>) outlive it and are collected
-      // by tick — unless their chain file is gone, then nothing ever will.
+      // Subagents die with their session; claude -p runs and T3 threads (agent run:<chain>) outlive it
+      // and are collected by tick — unless their chain file is gone, then nothing ever will.
       const liveChains = new Set(listChains(dir).filter((c) => c.status === 'running').map((c) => `run:${c.id}`));
       const orphans = S.listItems(db()).filter((i) => i.agent_id && !liveChains.has(i.agent_id));
       if (opt['new-session']) {
@@ -381,14 +391,32 @@ try {
       S.setMeta(db(), 'hostThreadLink', host.link ?? '');
       // CLIs are checked here; MCP servers are only visible to the session, which reports them.
       const required = requiredSources(settings);
+      // The t3 CLI, once per session, when workers run as T3 threads (it is a required source; also
+      // when it was never checked) or the session is a T3 thread: is it there, does the server
+      // answer, is the workspace a T3 project. In between, its source keeps the session's answer.
+      const workspace = resolve(dir, '..');
+      const t3Row = S.listSources(db()).find((r) => r.name === 'cli:t3');
+      const checkT3 = opt['new-session'] ? required.includes('cli:t3') || host.name === 't3' : required.includes('cli:t3') && !t3Row;
+      const t3 = checkT3 ? T3.check(settings, [workspace]) : undefined;
       const cli = {};
       for (const name of required.filter((n) => n.startsWith('cli:'))) {
+        if (name === 'cli:t3') {
+          // t3 may not be on PATH (T3 Code names it in $T3CODE_CLI_PATH), and it needs its server.
+          if (!t3) { cli[name] = t3Row.status; continue; }
+          cli[name] = t3.ok ? 'ok' : /cannot start/.test(t3.error ?? '') ? 'missing' : 'error';
+          S.setSource(db(), name, cli[name], t3.ok ? undefined : t3.error);
+          continue;
+        }
         cli[name] = hasBin(name.slice(4)) ? 'ok' : 'missing';
         S.setSource(db(), name, cli[name], cli[name] === 'missing' ? `${name.slice(4)} not on PATH` : undefined);
       }
       const sources = { cli, checkMcp: required.filter((n) => n.startsWith('mcp:')) };
       const srv = await server.start(home, homeSettings(home, settings));
-      out({ missing: [], dir, home, host, server: srv, orphans: orphans.map((o) => o.id), migration, sources, settings });
+      out({
+        missing: [], dir, home, host, server: srv, orphans: orphans.map((o) => o.id), migration, sources,
+        ...(t3 ? { t3: { bin: t3.bin, ok: t3.ok, ...(t3.version ? { version: t3.version } : {}), ...(t3.error ? { error: t3.error } : {}), workspaceProject: t3.projects[workspace] ?? null } } : {}),
+        settings,
+      });
       break;
     }
     case 'schedule':
@@ -487,7 +515,12 @@ try {
         for (let waited = 0; prev && !gone(prev) && waited < 3000; waited += 50) await new Promise((ok) => setTimeout(ok, 50));
       }
       let cursor = Number(S.getMeta(db(), 'lastDashboardEventId') ?? 0);
+      // Signals are levels (this step has ended, this thread waits): each is reported when it appears,
+      // and again when it comes back after going away (a thread that asks a second time). A signal
+      // names its step, so a cached one never stands for the step a chain has moved on to.
       const reported = new Set();
+      let threads = [];
+      let askedThreadsAt = 0;
       for (;;) {
         if (!opt.once && !mine()) replaced();
         for (const e of S.listEvents(db(), { afterId: cursor })) {
@@ -495,11 +528,20 @@ try {
           if (KINDS.includes(e.kind)) emit({ kind: e.kind, item: e.item_id, message: e.message, ...(e.data ?? {}) });
         }
         // A claude -p run whose process ended: the next tick collects it.
-        for (const f of finishedSteps(dir)) {
-          const key = `${f.chain}:${listChains(dir).find((c) => c.id === f.chain)?.steps.findIndex((x) => x.status === 'running')}`;
+        const signals = finishedSteps(dir).map((f) => ({ kind: 'run-finished', ...f }));
+        // T3 threads have no process to look at: ask the t3 CLI, every `t3PollSeconds`.
+        if (!hasThreadRuns(dir)) threads = [];
+        else if (opt.once || Date.now() - askedThreadsAt >= Math.max(1, Number(loopSettings(dir).t3PollSeconds)) * 1000) {
+          threads = threadSignals(dir, loopSettings(dir));
+          askedThreadsAt = Date.now();
+        }
+        signals.push(...threads);
+        const current = new Map(signals.map(({ step, ...f }) => [`${f.kind}:${f.chain}:${step}`, f]));
+        for (const key of reported) if (!current.has(key)) reported.delete(key);
+        for (const [key, f] of current) {
           if (reported.has(key)) continue;
           reported.add(key);
-          emit({ kind: 'run-finished', item: f.item, chain: f.chain });
+          emit(f);
         }
         if (opt.once) break;
         await new Promise((ok) => setTimeout(ok, every));
@@ -536,7 +578,8 @@ try {
       break;
     }
     case 'run': {
-      if (!opt.kind || !opt.chain) die('run <id> --kind <k> --chain <repo>=<worktree>[,…] [--status s] < task (or --task "…")');
+      if (!opt.kind || !opt.chain) die('run <id> --kind <k> --chain <repo>=<worktree>[,…] [--status s] [--runner t3|claude-p] [--force] < task (or --task "…")');
+      if (opt.runner !== undefined && !['t3', 'claude-p'].includes(opt.runner)) die(`unknown runner ${opt.runner} (t3 | claude-p)`);
       // The task normally comes on stdin, so ticket text never passes through a shell command line.
       let task = opt.task;
       if (task === undefined) task = (await readStdin()).trim();
@@ -547,19 +590,52 @@ try {
       });
       const settings = loopSettings(dir);
       const id = resolveId(args[0]);
-      const r = await startChain(db(), dir, settings, { item: id, kind: opt.kind, task, dryRun: settings.dryRun, workspace: resolve(dir, '..'), steps });
+      const r = await startChain(db(), dir, settings, { item: id, kind: opt.kind, task, dryRun: settings.dryRun, workspace: resolve(dir, '..'), steps, runner: opt.runner, force: !!opt.force });
       if (r.started && opt.status) S.setFields(db(), id, { status: opt.status });
       out(r);
       break;
     }
     case 'runs': {
       const chains = listChains(dir);
-      opt.json ? out(chains) : out(chains.map((c) => `${c.id.padEnd(16)} ${c.status.padEnd(9)} ${c.steps.map((x) => `${x.repo} ${x.status}`).join(' → ')}`).join('\n') || '(none)');
+      // A T3 thread's line below its chain: where to open it, and whether it waits for an answer.
+      const threadLines = (c) => c.steps.filter((x) => x.thread).map((x) => `  ${x.repo}: ${x.link ?? x.thread}${x.waiting ? '  (waiting for your answer)' : x.detached ? '  (let go of; may still be running)' : ''}`);
+      opt.json ? out(chains) : out(chains.flatMap((c) => [`${c.id.padEnd(16)} ${c.status.padEnd(9)} ${c.steps.map((x) => `${x.repo} ${x.status}`).join(' → ')}`, ...threadLines(c)]).join('\n') || '(none)');
       break;
     }
     case 'run-stop':
       out(stopChain(db(), dir, loopSettings(dir), resolveId(args[0])));
       break;
+    case 't3': {
+      const [sub, ...paths] = args;
+      const settings = loopSettings(dir);
+      const workspace = resolve(dir, '..');
+      if (sub === 'check') {
+        const all = [...new Set([workspace, ...paths.map((p) => resolve(p))])];
+        const c = T3.check(settings, all);
+        out({ host: T3.detectHost(), bin: c.bin, ok: c.ok, ...(c.version ? { version: c.version } : {}), ...(c.error ? { error: c.error } : {}), workspace, projects: c.projects });
+      } else if (sub === 'register') {
+        if (!paths[0]) die('t3 register <path> [--title t]');
+        const target = resolve(paths[0]);
+        const r = T3.addProject(settings, target, opt.title);
+        if (!r.ok) die(r.error);
+        out({ registered: target, added: r.added });
+      } else if (sub === 'remove') {
+        if (!paths[0]) die('t3 remove <worktree>');
+        const target = resolve(paths[0]);
+        // It deletes the project's threads too: only ever a worker worktree the t3 runner registered.
+        const inside = (root, p) => { const r = relative(root, p); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); };
+        if (settings.t3Project === 'containing') die('t3Project is containing: worker worktrees are not T3 projects of their own, so there is nothing of theirs to remove (the project that holds them is yours).');
+        if (inside(target, workspace)) die(`${target} is the workspace or holds it: my-day removes only a worker worktree's T3 project.`);
+        const chains = listChains(dir);
+        if (!chains.some((c) => c.steps.some((x) => x.project === target))) die(`${target} is not a T3 project the t3 runner registered for a worker worktree: nothing removed.`);
+        const busy = chains.filter((c) => c.status === 'running' && c.steps.some((x) => x.cwd === target && ['running', 'queued'].includes(x.status)));
+        if (busy.length) die(`${target} is still used by ${busy.map((c) => c.id).join(', ')}: nothing removed.`);
+        const r = T3.removeProject(settings, target, { force: true });
+        if (!r.ok) die(r.error);
+        out({ removed: target });
+      } else die('t3 check [path …] | t3 register <path> [--title t] | t3 remove <worktree>');
+      break;
+    }
     case 'dispatch':
       if (!opt.agent) die('dispatch needs --agent');
       out(dispatch(db(), resolveId(args[0]), { agent: opt.agent, status: opt.status }));
