@@ -15,6 +15,9 @@ Notes for coding agents working on this repo. Read `README.md` first.
   dashboard server per machine, reading every registered loop's `state.db`. `runs.mjs` is the
   `claude -p` runner (`runner: claude-p`): chain files in `.my-day/runs/`; its tests use
   `test/fixtures/fake-claude.mjs` via `CLAUDE_BIN` — never start a real `claude` in tests.
+  `t3.mjs` is everything T3 Code: host detection (`CLAUDE_CODE_ENTRYPOINT=t3-code`,
+  `T3CODE_THREAD_ID`) and the `t3` CLI calls; its tests use `test/fixtures/fake-t3.mjs` via
+  `T3_BIN` (+ `FAKE_T3_HOME`) — never start a real `t3` in tests.
 - `skills/loop/ui`: the dashboard UI (React + Vite + Tailwind v4 + shadcn/ui on Base UI), an npm
   workspace. `src/components/ui` is shadcn's (add with `pnpm dlx shadcn@latest add <name>` run in
   `skills/loop/ui`); app components compose them. `skills/loop/test`: `node --test` suites.
@@ -39,6 +42,12 @@ Notes for coding agents working on this repo. Read `README.md` first.
   (set `PW_CHANNEL=` and run `npx playwright install chromium` to use Playwright's Chromium).
   Extend the seed when a new panel or state should show; never screenshot real workspace data.
 - Tests never touch the real `~/.my-day`: set `MY_DAY_HOME` to a temp dir.
+- Tests may themselves run inside a T3 Code thread: a test that spawns the CLI first deletes
+  `CLAUDE_CODE_ENTRYPOINT`, `T3CODE_*` and `T3_BIN` from the environment (see `cli.test.mjs`), or
+  `bootstrap` would see a T3 host and call the real `t3`.
+- **T3 Code:** Node reaches T3 Code only through the `t3` CLI (`lib/t3.mjs`); the MCP tools
+  (`preview_open` …) exist only for the model, so skills name them as "when available". Skills
+  must not depend on `TaskList` or Remote Control (neither exists in T3 Code).
 - The dashboard server never talks to a code host or tracker. Dashboard actions are recorded
   as events; the loop acts on them on its next tick.
 - Bump the version in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`
