@@ -153,6 +153,22 @@ test('a run sees the loop store through MY_DAY_DIR, so the worker can use the st
   assert.equal(chainOf(w.dir, w.item).steps[0].result.stateDir, w.dir);
 });
 
+test('a run started from a loop in T3 Code does not inherit the host: it is not the loop\'s thread', async () => {
+  const w = workspace();
+  const host = { CLAUDE_CODE_ENTRYPOINT: 't3-code', T3CODE_THREAD_ID: 'mcp:loop', T3CODE_CLI_PATH: '/x/t3', T3CODE_HOME: '/x' };
+  Object.assign(process.env, host);
+  try {
+    await start(w, 'env', 'web');
+  } finally {
+    for (const k of Object.keys(host)) delete process.env[k];
+  }
+  await until(() => collectRuns(w.db, w.dir, settings).finished[0]);
+  const { result } = chainOf(w.dir, w.item).steps[0];
+  assert.equal(result.status, 'done');
+  assert.deepEqual(result.hostEnv, []);
+  assert.equal(result.stateDir, w.dir);
+});
+
 test('an earlier summary spanning lines stays on one line in the next prompt', async () => {
   const w = workspace();
   const r = await start(w, 'multiline', 'api-spec', 'web');

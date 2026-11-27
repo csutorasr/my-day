@@ -12,7 +12,15 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
 
 ## Start
 1. `$SM bootstrap --new-session` on the first call of a session, `$SM bootstrap` after.
-   `missing` non-empty → run the `my-day:setup` skill first. First call: `open <server.url>`.
+   `missing` non-empty → run the `my-day:setup` skill first.
+   `host.name` says where this session runs: `t3` = a T3 Code thread (`host.link` opens it),
+   otherwise Claude Code. First call: show the dashboard — in T3 Code with
+   `mcp__t3-code__preview_open` when available (a deferred tool: load it with ToolSearch;
+   `{"target":{"kind":"environment-port","port":<server.port>}}` opens it in an in-app tab),
+   otherwise `open <server.url>`.
+   `t3` (first call of a session, in T3 Code or with `runner: t3`): `ok` false → tell the user its
+   `error`; with `runner: t3` add that no worker thread can start until it is fixed (source
+   `cli:t3` is down). Without `runner: t3` it only matters to setup.
    `sources.checkMcp` (first call of a session) → for each `mcp:<name>`, look for its tools
    (`mcp__*<name>*`, deferred ones included) and report `$SM source mcp:<name> ok|missing`.
 2. Read `$SM config all` once per session; re-read a file after it changes.
@@ -21,8 +29,8 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
 
 ## Tick
 1. `$SM tick` → `schedule` (incl. `dreamDue` and `due`: other `<name>Schedule` slots that came
-   round, e.g. `status`), `sync` (code-host delta), `act` (MR ids by verdict), `tickets`,
-   `running`, `reviewsPending`, `openQuestions`, `approvedDrafts` (see *Outward writes*),
+   round, e.g. `status`), `sync` (code-host delta), `runs` (see *Workers*), `act` (MR ids by
+   verdict), `tickets`, `running`, `reviewsPending`, `openQuestions`, `approvedDrafts` (see *Outward writes*),
    `sources` (`down`, `unchecked`), `failed`, `fromDashboard`. Code host and reviews are done
    (`covered` reviews, see QUERY-MY-REVIEWS.md, are not pending).
    `fromDashboard` = what the user did on the dashboard since the last tick: `dashboard-answer`
@@ -46,15 +54,18 @@ Config: `$SM config show <NAME>` (shared `X.md` + personal `X.local.md`).
 5. `$SM prune` once a day.
 6. `ScheduleWakeup`: prompt `/loop /my-day:loop`, `delaySeconds` = `schedule.delaySeconds`,
    `noop` = nothing changed.
-7. Dashboard watch: unless one is already running (TaskList), arm a `Monitor` with
-   `node $SM watch` (from the workspace root), `timeout_ms` 1800000, description
-   "my-day dashboard clicks and runs". Each event is a click on the dashboard or a finished
-   `claude -p` run → run a tick right away (from step 1; its `fromDashboard` / `runs` holds it)
-   instead of waiting for the wakeup. Re-arm it when it
-   expires. Outside working hours the watch keeps running: answers are recorded, actions wait for hours.
+7. Dashboard watch: arm a `Monitor` with `node $SM watch` (from the workspace root),
+   `timeout_ms` 1800000, description "my-day dashboard clicks and runs" — on the session's first
+   tick, when the previous one ended, and whenever you cannot tell that one still runs (never
+   look for it with TaskList: T3 Code has none). Arming it again is safe: the new watch takes
+   over and the old one prints `watch-replaced` and ends — ignore that line, don't re-arm for it.
+   Every other line is a click on the dashboard, a finished run (`run-finished`), a worker's T3
+   thread waiting for the user (`run-waiting`) or answered again (`run-resumed`) → run a tick
+   right away (from step 1; its `fromDashboard` / `runs` holds it) instead of waiting for the wakeup.
+   Outside working hours the watch keeps running: answers are recorded, actions wait for hours.
 
 ## Workers
-`schedule`'s settings (`$SM config settings`) say how: `runner: agent` (default) or `runner: claude-p`.
+`schedule`'s settings (`$SM config settings`) say how: `runner: agent` (default), `claude-p` or `t3`.
 
 **agent** — Agent tool, `general-purpose`, no `isolation` (workers make their own sub-repo worktree):
 ```
@@ -89,9 +100,36 @@ Writes a worker was not allowed to make (`WRITES.md`) come back as drafts: recon
 5. `dashboard-request` `stop` → `$SM run-stop <id>` (kills the running repo, cancels the rest) —
    at once, also when paused or outside working hours.
 
+**t3** — one T3 Code thread per repo, started through the `t3` CLI. The chain works as for
+`claude-p` (steps 1–3 and 5: same `run` command, results in `runs.finished`), except:
+- **Where it runs.** `run` registers the repo's worktree as its own T3 project, so the thread's
+  folder is the worktree and the repo's `CLAUDE.md`, settings and skills apply
+  (`t3Project: worktree`). With `t3Project: containing` nothing is registered: the thread starts
+  in the T3 project that holds the worktree and the worker `cd`s there; a `failed` answer saying
+  no project matches → ask, then `$SM t3 register <workspace or repo>`.
+- **Its link.** Known from the first look at the thread: `$SM runs`, the item's links, the
+  dashboard. Name it in the session when you first see it, e.g. "bug-2 → backend worker: <link>".
+- **A worker that asks.** A thread can stop for a question or an approval. `runs.waiting` (and a
+  `run-waiting` line from `watch`) lists those: tell the user once per wait which worker waits
+  and its `link` — only they can answer, in that thread. It is not a failure and not on the
+  clock: don't retry, stop or answer for them.
+- **Stop.** The `t3` CLI has no command that stops a thread. `run-stop` ends the chain and cancels
+  the later repos and lists the thread in `stillRunning`; a timeout does the same in `tick`'s
+  `runs.stillRunning`. For each, use `mcp__t3-code__t3_thread_interrupt` with its `thread` when
+  this session has it (a deferred tool: load it with ToolSearch). Without it (or if it fails) the
+  thread works on until the user presses Stop in it: pass on its link and say so.
+- **One thread per worktree.** `run` refuses (`not started: … still running in its T3 thread:
+  <link>`) while a thread my-day let go of may still work on the item or one of its worktrees.
+  Tell the user, with the link; `--force` only when they say so.
+- **Models.** `t3Model` / `t3Provider` / `t3Options`, per kind `t3Model<Kind>` (e.g.
+  `t3ModelRebase`), are applied by `run`; nothing to do per worker.
+- **Cleanup.** After removing a worktree (merged): `t3Cleanup: remove` → `$SM t3 remove
+  <worktree>` (deletes that T3 project *and its worker threads*; it refuses anything but a
+  worktree the runner registered); `keep` (default) → leave it.
+
 ## User
-- All communication in this session (the user follows it via Remote Control); the dashboard
-  mirrors it and can answer questions, pause, and send per-item quick actions (see `fromDashboard`). Ask with `$SM ask <id> "<q>"` and in chat as "q-4 · bug-2 (ABC-812 …): …";
+- All communication in the loop's session (its T3 Code thread, on desktop or phone, or Remote
+  Control in Claude Code); the dashboard mirrors it and can answer questions, pause, and send per-item quick actions (see `fromDashboard`). Ask with `$SM ask <id> "<q>"` and in chat as "q-4 · bug-2 (ABC-812 …): …";
   record with `$SM answer` / `$SM decline`; never re-ask; keep working meanwhile.
 - An answer or instruction that sets a standing rule → `my-day:config`.
 - `elaborate <id>` / `summary …` → `my-day:summary`. `dream` → `my-day:dream`. `pause` (`$SM pause`, no dispatch), `resume` (`$SM resume`),

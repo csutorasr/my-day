@@ -28,6 +28,7 @@ const NOTIFY = {
   merged: 'Merged',
   failed: 'Needs attention',
   escalated: 'Escalated',
+  'run-waiting': 'A worker is waiting for you',
   'source-down': 'Source down',
   notify: 'my-day',
 };
@@ -39,7 +40,8 @@ const broadcast = (type, data) => {
 
 // Quick actions a dashboard viewer may ask the loop for. The loop picks them up on its next tick
 // (`state.mjs tick` → fromDashboard); the server itself never touches the code host or tracker.
-// `stop` ends a claude -p chain: the loop kills it (`state.mjs run-stop`), never this server.
+// `stop` ends a chain of runs (claude -p or T3 threads): the loop does it (`state.mjs run-stop`),
+// never this server.
 const REQUESTS = ['rebase', 'fix-pipeline', 'fix-review', 'merge', 'retry', 'elaborate', 'stop'];
 
 // ---- loops: the registry entries, each with its store opened on first use.
@@ -113,6 +115,8 @@ function summaryOfOpen(l) {
     ...base,
     ...loopStatus(meta(l)),
     paused: S.getMeta(l.db, 'paused') === 'true',
+    // Where the loop's session runs; in T3 Code, the link that opens its thread.
+    host: { name: S.getMeta(l.db, 'host') || 'claude-code', threadLink: S.getMeta(l.db, 'hostThreadLink') || null },
     counts: {
       questions: S.listQuestions(l.db, { status: 'open' }).length,
       failed: items.filter((i) => i.failed).length,
@@ -146,10 +150,14 @@ function stateOf(l) {
       const rows = new Map(S.listSources(db).map((r) => [r.name, r]));
       return requiredSources(conf).map((name) => rows.get(name) ?? { name, status: 'unchecked', message: null, checked_at: null });
     })(),
-    // claude -p chains (runner: claude-p) that run now or ended today; process details stay local.
+    // Chains of runs (runner: claude-p or t3) that run now or ended today; process details stay local.
+    // A T3 thread step carries the link that opens it, and whether it waits for the user's answer.
     runs: listChains(l.dir)
       .filter((c) => c.status === 'running' || (c.endedAt ?? '') >= startOfToday())
-      .map((c) => ({ id: c.id, item: c.item, kind: c.kind, status: c.status, startedAt: c.startedAt, endedAt: c.endedAt, steps: c.steps.map(({ repo, status, startedAt, endedAt }) => ({ repo, status, startedAt: startedAt ?? null, endedAt: endedAt ?? null })) })),
+      .map((c) => ({
+        id: c.id, item: c.item, kind: c.kind, runner: c.runner ?? 'claude-p', status: c.status, startedAt: c.startedAt, endedAt: c.endedAt,
+        steps: c.steps.map(({ repo, status, startedAt, endedAt, link, waiting, detached }) => ({ repo, status, startedAt: startedAt ?? null, endedAt: endedAt ?? null, ...(link ? { link } : {}), ...(waiting ? { waiting: true } : {}), ...(detached ? { detached: true } : {}) })),
+      })),
     finishedToday: S.listEvents(db, { from: startOfToday() })
       .filter((e) => e.kind === 'worker')
       .map((e) => ({ id: e.id, ts: e.ts, message: e.message, status: e.data?.status ?? null, commits: e.data?.commits ?? [], item: ref(byId.get(e.item_id)) })),
@@ -351,7 +359,8 @@ async function pollLoop(l, many) {
       if (!NOTIFY[e.kind]) continue;
       const item = e.item_id ? S.getItem(l.db, e.item_id) : null;
       const title = many ? `${l.name} · ${NOTIFY[e.kind]}` : NOTIFY[e.kind];
-      const payload = { title, body: e.message, url: item?.url ?? '/', tag: `${l.id}-${e.kind}-${e.item_id ?? e.id}` };
+      // A worker waiting in its T3 thread: the notification opens that thread.
+      const payload = { title, body: e.message, url: (e.kind === 'run-waiting' && e.data?.link) || item?.url || '/', tag: `${l.id}-${e.kind}-${e.item_id ?? e.id}` };
       broadcast('notify', payload);
       await push.send(dash, payload);
     }

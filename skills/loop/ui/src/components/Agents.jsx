@@ -20,16 +20,18 @@ export function Agents() {
         </div>
         <div className="flex flex-col gap-3">
           {running.map((i) => {
-            // A claude -p chain shows which repo it is in; subagents show their agent id.
+            // A chain of runs shows which repo it is in; subagents show their agent id. A T3 thread
+            // links to itself, and says so when it stopped to ask: only the user can answer there.
             const run = runStep(i, s.runs);
             return (
               <div className={entry} key={i.id} data-agent={i.id}>
-                <Badge className={toneBadge.wait}>running</Badge>
+                <Badge className={run?.waiting ? toneBadge.bad : toneBadge.wait}>{run?.waiting ? 'needs you' : 'running'}</Badge>
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="text-sm">{agentTask(i)}{run ? ` · ${run.label}` : ''}</span>
                   <span className="flex flex-wrap items-center gap-2">
                     <Ref item={i} actions={run ? ['stop'] : []} />
-                    <span className="font-mono text-xs text-muted-foreground">{run ? `claude -p since ${hhmm(run.since)}` : `agent ${i.agent_id}`}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{run ? `${run.runner} since ${hhmm(run.since)}` : `agent ${i.agent_id}`}</span>
+                    {run?.link && <Ref text={run.waiting ? 'Answer in its thread' : 'Open thread'} url={run.link} />}
                   </span>
                 </div>
               </div>

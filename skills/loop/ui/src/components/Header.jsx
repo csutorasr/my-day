@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { ComputerIcon, KeyboardIcon } from '@hugeicons/core-free-icons';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import { useDashboard, useNotifications, useTheme } from '../dashboard.jsx';
@@ -29,6 +29,17 @@ export function PauseButton({ loop, act, size }) {
     <Button variant="outline" size={size} onClick={() => act(`${apiFor(loop.id)}/${paused ? 'resume' : 'pause'}`, null, paused ? `${name}: loop resumed.` : `${name}: loop paused. Nothing new is started until you resume.`)} aria-label={`${paused ? 'Resume' : 'Pause'} loop ${name}`}>
       {paused ? 'Resume loop' : 'Pause loop'}
     </Button>
+  );
+}
+
+// The loop's own session, when it runs as a T3 Code thread: where the user talks to it.
+export function LoopThreadLink({ loop, size, className }) {
+  const href = loop?.host?.threadLink;
+  if (!href) return null;
+  return (
+    <a href={href} target="_blank" rel="noopener" data-loop-thread={loop.id} className={cn(buttonVariants({ variant: 'outline', size }), className)} aria-label={`Open the T3 Code thread of loop ${loop.name} (opens in a new tab)`}>
+      Loop thread
+    </a>
   );
 }
 
@@ -76,6 +87,7 @@ export function Header({ onShortcuts }) {
           </Button>
         )}
         <ThemeSwitch />
+        {s && !s.multi && <LoopThreadLink loop={s} />}
         {s && !s.multi && <PauseButton loop={s} act={act} />}
         <Button variant="ghost" className="text-muted-foreground" onClick={enable}>{NOTIFY_LABEL[notifications.permission]}</Button>
         <Button variant="ghost" className="text-muted-foreground max-sm:hidden" onClick={onShortcuts} aria-keyshortcuts="?"><Icon icon={KeyboardIcon} />Shortcuts</Button>

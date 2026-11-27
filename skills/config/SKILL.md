@@ -31,6 +31,7 @@ Unsure → ask: "Make this a standing rule?"
 | merging, gates, rebase, force-push, trains | `MERGE-GATES.md` |
 | pipeline handling, reviewers, ticket transitions | `POST-MR.md` |
 | cadence, hours, limits, notifications volume, dream schedule | `LOOP.md` |
+| how workers run (`runner`), T3 worker threads: model per kind (`t3Model…`), `t3Project`, `t3Cleanup` | `LOOP.md` (`t3Bin`, a personal model → `LOOP.local.md`) |
 | what a dream checks for | `DREAM.md` (optional; create from the template) |
 | pm: backlog scope, definition of ready | `QUERY-BACKLOG.md`, `HYGIENE.md` |
 | pm: feedback sources, grouping, ticket threshold | `QUERY-FEEDBACK.md`, `FEEDBACK.md` |

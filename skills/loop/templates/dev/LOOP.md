@@ -10,6 +10,19 @@ retentionDays: 30         # events older than this are pruned
 pipelineTimeoutMinutes: 60
 port: 4711
 dryRun: false             # true = log outward actions instead of doing them (rehearsal)
+# Workers: agent = subagents of the loop's session | claude-p = a headless `claude -p` per repo
+# worktree | t3 = a T3 Code thread per repo worktree, started with the `t3` CLI (my-day:setup offers it in T3 Code)
+runner: agent
+# With runner: t3 (uncomment what you change):
+# t3Model: ''               # model of the worker threads; '' = the T3 project's default model
+# t3Provider: claudeAgent   # T3 provider instance, passed with t3Model (claudeAgent | codex | …)
+# t3Options: effort=high    # model options, comma-separated id=value
+# t3ModelRebase: claude-haiku-5-5   # per kind: t3Model<Kind> (+ t3Provider<Kind>, t3Options<Kind>);
+#                                     Kind = Develop | Bug | ReviewFix | PipelineFix | Rebase
+# t3Project: worktree       # worktree = each worker worktree becomes its own T3 project (the thread
+#                             runs in it) | containing = start in the T3 project that holds the worktree
+# t3Cleanup: keep           # remove = with a worktree, also remove its T3 project and worker threads
+# runTimeoutMinutes: 90     # a run still going after this fails (a T3 thread itself cannot be stopped)
 # Scope (read by `state.mjs tick`)
 tracker: <TRACKER>        # jira | github | gitlab | linear | azure | other | none
 forge: <FORGE>            # gitlab | github | none (no code-host sync)
@@ -57,4 +70,5 @@ Refresh (read-only) is fine; no dispatches, brainstorms or outward writes. Wakeu
 60 minutes, so schedule hourly `noop` ticks until the window opens.
 
 ## Communication
-All questions go to the main session (reached via Remote Control). The dashboard only mirrors them.
+All questions go to the loop's session (its T3 Code thread, or Remote Control). The dashboard
+only mirrors them.

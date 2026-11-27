@@ -20,7 +20,7 @@ export const ACTION_HINT = {
   merge: 'merge it if every merge gate passes',
   retry: 'try this item again',
   elaborate: 'explain where this item stands, in the session',
-  stop: 'stop its claude -p run (the repos not started yet are cancelled)',
+  stop: 'stop its run (the repos not started yet are cancelled; a T3 thread is interrupted by the loop when it can, else stop it in T3 Code)',
 };
 // Actions that rewrite or merge shared history: never offered on a phone.
 export const RISKY_ACTIONS = new Set(['rebase', 'merge']);
@@ -95,23 +95,29 @@ export function gates(m, target) {
 
 const BAD = new Set(['failed', 'escalated', 'orphaned', 'pipeline-failed', 'conflicts']);
 const GOOD = new Set(['merged', 'rebased', 'pipeline-green', 'review-done', 'question-answered']);
-const ATTN = new Set(['question', 'review-requested', 'dashboard-request', 'dashboard-answer']);
+const ATTN = new Set(['question', 'review-requested', 'dashboard-request', 'dashboard-answer', 'run-waiting']);
 export const dotFor = (k) => (BAD.has(k) ? 'bad' : GOOD.has(k) ? 'ok' : ATTN.has(k) ? 'warn' : 'accent');
 
 export const isApproval = (q) => /^approve\b/i.test(q.text);
 
 // Event kinds as words: "pipeline-green" → "pipeline green", with a few clearer names.
-const EVENT_WORDS = { 'run-started': 'run started', 'run-finished': 'runs finished', dispatched: 'agent started', worker: 'agent finished', 'review-requested': 'review requested', 'dashboard-request': 'requested on the dashboard', 'dashboard-answer': 'answered on the dashboard', 'dashboard-pause': 'paused on the dashboard', status: 'status change' };
+const EVENT_WORDS = { 'run-started': 'run started', 'run-finished': 'runs finished', 'run-waiting': 'worker waiting for you', dispatched: 'agent started', worker: 'agent finished', 'review-requested': 'review requested', 'dashboard-request': 'requested on the dashboard', 'dashboard-answer': 'answered on the dashboard', 'dashboard-pause': 'paused on the dashboard', status: 'status change' };
 export const eventLabel = (kind) => EVENT_WORDS[kind] ?? kind.replace(/-/g, ' ');
 
-// Where a claude -p chain is: "backend (2 of 3)"; null for subagents and finished chains.
+// Where a chain of runs (claude -p or T3 threads) is: "backend (2 of 3)"; null for subagents and
+// finished chains. A T3 thread also has the link that opens it and may be waiting for an answer.
 export function runStep(item, runs) {
   if (!item.agent_id?.startsWith('run:')) return null;
   const chain = (runs ?? []).find((c) => c.id === item.agent_id.slice(4) && c.loop === item.loop);
   const at = chain?.steps.findIndex((s) => s.status === 'running') ?? -1;
   if (at < 0) return null;
-  return { repo: chain.steps[at].repo, label: `${chain.steps[at].repo} (${at + 1} of ${chain.steps.length})`, since: chain.steps[at].startedAt };
+  const step = chain.steps[at];
+  const t3 = chain.runner === 't3';
+  return { repo: step.repo, label: `${step.repo} (${at + 1} of ${chain.steps.length})`, since: step.startedAt, runner: t3 ? 'T3 thread' : 'claude -p', link: step.link ?? null, waiting: !!step.waiting };
 }
+
+// Worker threads that stopped to ask the user something, across the loops shown.
+export const waitingRuns = (runs) => (runs ?? []).flatMap((c) => (c.status === 'running' ? c.steps.filter((s) => s.status === 'running' && s.waiting).map((s) => ({ ...s, chain: c.id, item: c.item, loop: c.loop })) : []));
 
 // What a running agent is doing, from the item it works on ("Fixing pipeline on web !81").
 const STATUS_VERB = { fixing: 'Fixing', rebasing: 'Rebasing', developing: 'Developing', reviewing: 'Handling review on' };

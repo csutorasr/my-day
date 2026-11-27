@@ -44,10 +44,23 @@ export const DEFAULTS = {
   reviewBatchNotify: 3, // more new review requests than this → one summary notification
   hideCoveredReviews: false, // hide review requests others already approved / requested changes on
   dreamSchedule: '', // when my-day:dream is due, e.g. 'Fri 17:00'; empty = off
-  runner: 'agent', // agent = Agent-tool subagents; claude-p = detached `claude -p` per repo (lib/runs.mjs)
+  // agent = Agent-tool subagents; claude-p = detached `claude -p` per repo; t3 = a T3 Code thread per
+  // repo, started with the `t3` CLI (both in lib/runs.mjs)
+  runner: 'agent',
   permissionMode: 'acceptEdits', // passed to claude -p --permission-mode
-  runTimeoutMinutes: 90, // a claude -p run still alive after this is stopped and fails
+  runTimeoutMinutes: 90, // a run still going after this fails (claude -p is killed; a T3 thread cannot be)
   claudeBin: 'claude', // the CLI the runner starts ($CLAUDE_BIN overrides)
+  // runner: t3 (lib/t3.mjs)
+  t3Bin: '', // the t3 CLI: $T3_BIN > this > $T3CODE_CLI_PATH (set inside a T3 Code thread) > `t3`
+  t3Provider: 'claudeAgent', // T3 provider instance of the worker threads (claudeAgent | codex | …)
+  t3Model: '', // model slug; '' = the T3 project's default model (then provider and options are not passed)
+  t3Options: '', // model options, comma-separated id=value (e.g. effort=high)
+  // Per kind: t3Model<Kind> (+ t3Provider<Kind>, t3Options<Kind>), Kind = Develop | Bug | ReviewFix |
+  // PipelineFix | Rebase — e.g. t3ModelRebase: claude-haiku-5-5
+  t3Project: 'worktree', // worktree = each worker worktree becomes its own T3 project (the thread runs in it);
+  //                        containing = the thread starts in the registered project that holds the worktree
+  t3Cleanup: 'keep', // remove = when the loop removes a worktree, also remove its T3 project and worker threads
+  t3PollSeconds: 10, // how often `watch` asks T3 Code about running worker threads
 };
 
 const read = (file) => (existsSync(file) ? readFileSync(file, 'utf8') : null);
@@ -98,10 +111,13 @@ export function parseFrontmatter(text) {
 }
 
 // LOOP.md `requires: mcp:atlassian, mcp:slack, cli:glab` (brackets optional): the sources the loop
-// cannot work without. Unique, in order.
+// cannot work without. Unique, in order. `runner: t3` adds `cli:t3`.
 export function requiredSources(settings) {
   const raw = String(settings.requires ?? '').trim().replace(/^\[|\]$/g, '');
-  return [...new Set(raw.split(',').map((s) => s.trim()).filter(Boolean))];
+  const listed = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  // Workers as T3 Code threads cannot start without the t3 CLI and its server.
+  if (settings.runner === 't3') listed.push('cli:t3');
+  return [...new Set(listed)];
 }
 
 export function loopSettings(dir) {
