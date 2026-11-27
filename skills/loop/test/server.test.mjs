@@ -137,6 +137,20 @@ test('state lists the loop\'s claude -p runs; Stop run is a request the loop car
   assert.equal(S.listEvents(db, { limit: 1 })[0].data.action, 'stop');
 });
 
+test('a T3 thread run carries its link and whether it waits for you', async () => {
+  const now = new Date().toISOString();
+  const link = 'https://app.t3.codes/threads/env/mcp%3A1';
+  writeFileSync(join(wsA, 'runs', 'bug-1-2.json'), JSON.stringify({
+    id: 'bug-1-2', runner: 't3', item: 'bug-1', kind: 'bug', status: 'running', startedAt: now, endedAt: null,
+    steps: [{ repo: 'web', cwd: '/w/web', status: 'running', startedAt: now, thread: 'mcp:1', run: 'run:1', link, waiting: true, waitingSince: now }],
+  }));
+  const st = await stateA();
+  const run = st.runs.find((r) => r.id === 'bug-1-2');
+  assert.equal(run.runner, 't3');
+  assert.deepEqual(run.steps, [{ repo: 'web', status: 'running', startedAt: now, endedAt: null, link, waiting: true }]);
+  assert.equal(st.runs.find((r) => r.id === 'bug-1-1').runner, 'claude-p');
+});
+
 test('a loop whose session is a T3 Code thread links to that thread', async () => {
   // Unknown until bootstrap says, then the T3 Code thread to open.
   let st = await stateA();

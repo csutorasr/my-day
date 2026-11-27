@@ -315,6 +315,23 @@ test('a claude -p run shows its repo in the chain, and Stop run waits in the out
   await expect(run.getByRole('button', { name: /^Stop run/ })).toBeVisible();
 });
 
+test('a T3 thread run links to its thread and says when the worker waits for you', async ({ page }) => {
+  await page.goto(url);
+  // The health strip pulls you in: only you can answer, in the worker's T3 Code thread.
+  const asking = page.locator('[data-workers-waiting]');
+  await expect(asking).toContainText('1 worker is waiting for your answer in T3 Code');
+  await expect(asking.getByRole('link')).toHaveAttribute('href', 'https://app.t3.codes/threads/demo-env/demo-worker');
+  await page.goto(`${url}/#loop`);
+  await page.getByRole('group', { name: 'Loop shown' }).getByRole('button', { name: 'studio' }).click();
+  const run = page.locator('#agents [data-agent="subtask-1"]');
+  await expect(run).toContainText('needs you');
+  await expect(run).toContainText('ui (1 of 1)');
+  await expect(run).toContainText('T3 thread since');
+  await expect(run.getByRole('link', { name: /^Answer in its thread/ })).toHaveAttribute('href', 'https://app.t3.codes/threads/demo-env/demo-worker');
+  await expect(run.getByRole('button', { name: /^Stop run/ })).toBeVisible();
+  await expect(page.getByText('worker waiting for you').first()).toBeVisible();
+});
+
 test('a loop whose session is a T3 Code thread links to it: per loop row, or in the header of a single loop', async ({ page }) => {
   await page.goto(url);
   await expect(page.locator(`[data-loop-row="${loops.studio}"] [data-loop-thread]`)).toHaveAttribute('href', 'https://app.t3.codes/threads/demo-env/demo-loop');
