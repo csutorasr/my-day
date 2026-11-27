@@ -37,6 +37,9 @@ test('mergeStates tags every row with its loop and keeps ids apart', () => {
   assert.deepEqual(m.sources.map((x) => `${x.loopName}:${x.name}`), ['a:mcp:slack', 'b:mcp:slack']);
   assert.equal(m.multi, true);
   assert.deepEqual(m.loops.map((l) => l.id), ['a', 'b']);
+  // Each loop keeps its own host: one may run in T3 Code (a thread to open), another in a terminal.
+  const hosted = mergeStates([{ ...st('a'), host: { name: 't3', threadLink: 'https://t3/a' } }, st('b')]);
+  assert.deepEqual(hosted.loops.map((l) => l.host?.threadLink), ['https://t3/a', undefined]);
   assert.equal(mergeStates([st('a')]).multi, false);
   assert.equal(mergeStates([]), null);
   assert.equal(apiFor('a'), '/api/loops/a');

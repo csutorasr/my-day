@@ -34,7 +34,7 @@ const LISTS = ['items', 'questions', 'failed', 'reviews', 'finishedToday', 'rece
 export function mergeStates(states) {
   if (!states.length) return null;
   const [first] = states;
-  const merged = { ...first, multi: states.length > 1, loops: states.map(({ id, name, running, stopped, paused, loop }) => ({ id, name, running, stopped, paused, loop })) };
+  const merged = { ...first, multi: states.length > 1, loops: states.map(({ id, name, running, stopped, paused, loop, host }) => ({ id, name, running, stopped, paused, loop, host })) };
   for (const key of LISTS) merged[key] = states.flatMap((s) => (s[key] ?? []).map((row) => ({ ...row, loop: s.id, loopName: s.name })));
   return merged;
 }

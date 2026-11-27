@@ -315,6 +315,25 @@ test('a claude -p run shows its repo in the chain, and Stop run waits in the out
   await expect(run.getByRole('button', { name: /^Stop run/ })).toBeVisible();
 });
 
+test('a loop whose session is a T3 Code thread links to it: per loop row, or in the header of a single loop', async ({ page }) => {
+  await page.goto(url);
+  await expect(page.locator(`[data-loop-row="${loops.studio}"] [data-loop-thread]`)).toHaveAttribute('href', 'https://app.t3.codes/threads/demo-env/demo-loop');
+  // shop's session is a Claude Code terminal: no such link.
+  await expect(page.locator(`[data-loop-row="${loops.shop}"] [data-loop-thread]`)).toHaveCount(0);
+  await expect(page.getByRole('banner').locator('[data-loop-thread]')).toHaveCount(0);
+  const one = seedDemo(mkdtempSync(join(tmpdir(), 'myday-e2e-t3-')), { only: ['studio'] });
+  const { url: oneUrl } = await ctl.start(one.home, { port: await freePort() });
+  try {
+    await page.goto(oneUrl);
+    const thread = page.getByRole('banner').getByRole('link', { name: 'Open the T3 Code thread of loop studio (opens in a new tab)' });
+    await expect(thread).toHaveText('Loop thread');
+    await expect(thread).toHaveAttribute('href', 'https://app.t3.codes/threads/demo-env/demo-loop');
+    await expect(thread).toHaveAttribute('target', '_blank');
+  } finally {
+    await ctl.stop(one.home);
+  }
+});
+
 test('activity names events in words and agents lead with their task', async ({ page }) => {
   await page.goto(`${url}/#loop`);
   await expect(page.getByText('agent started').first()).toBeVisible();

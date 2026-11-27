@@ -137,6 +137,22 @@ test('state lists the loop\'s claude -p runs; Stop run is a request the loop car
   assert.equal(S.listEvents(db, { limit: 1 })[0].data.action, 'stop');
 });
 
+test('a loop whose session is a T3 Code thread links to that thread', async () => {
+  // Unknown until bootstrap says, then the T3 Code thread to open.
+  let st = await stateA();
+  assert.deepEqual(st.host, { name: 'claude-code', threadLink: null });
+  S.setMeta(db, 'host', 't3');
+  S.setMeta(db, 'hostThreadLink', 'https://app.t3.codes/threads/env/loop');
+  try {
+    st = await stateA();
+    assert.deepEqual(st.host, { name: 't3', threadLink: 'https://app.t3.codes/threads/env/loop' });
+    assert.deepEqual((await get('/api/loops')).find((l) => l.id === idA).host, st.host);
+  } finally {
+    S.setMeta(db, 'host', 'claude-code');
+    S.setMeta(db, 'hostThreadLink', '');
+  }
+});
+
 test('state lists the open review, not covered ones', async () => {
   const st = await stateA();
   assert.deepEqual(st.reviews.map((r) => r.id), [reviewId]);

@@ -1,6 +1,7 @@
 // An imaginary machine for the dashboard: a home (~/.my-day stand-in) with four registered loops,
 // each a workspace .my-day folder with LOOP.md and a state.db filled through the real DB layer.
-// `shop` shows every panel, `studio` is a second running loop, `voyage` is a pm loop (a draft to
+// `shop` shows every panel, `studio` is a second running loop whose session is a T3 Code thread,
+// `voyage` is a pm loop (a draft to
 // approve, a source down), `archive` is stopped. Used by the
 // e2e test (README screenshots) and `npm run ui:demo`. Everything here is made up; never copy real
 // work into it. Times are relative to now so the "Today" activity filter keeps working.
@@ -91,11 +92,16 @@ function seedShop(dir) {
 }
 
 // A design-system workspace: one MR waiting on a question, one failed story and one review. Its ids
-// (mr-1, q-1, review-1) repeat shop's on purpose: the dashboard must keep them apart.
+// (mr-1, q-1, review-1) repeat shop's on purpose: the dashboard must keep them apart. Its loop runs
+// in a T3 Code thread: the dashboard links to it.
+const t3Thread = (id) => `https://app.t3.codes/threads/demo-env/${id}`;
 function seedStudio(dir) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'LOOP.md'), '---\nworkingHours: 09:00-17:00\nmaxAgents: 2\ntargetBranch: main\n---\n# Imaginary workspace\n');
   const db = S.openDb(join(dir, 'state.db'));
+  S.setMeta(db, 'host', 't3');
+  S.setMeta(db, 'hostThreadId', 'demo-loop');
+  S.setMeta(db, 'hostThreadLink', t3Thread('demo-loop'));
   const { id: tokens } = S.upsertItem(db, { type: 'story', ext: 'jira:UI-12', title: 'Dark mode tokens for the button set', url: `${tracker}/UI-12`, status: 'developing' });
   S.fail(db, tokens, 'Visual regression tests fail on the focus ring');
   const { id: icons } = S.upsertItem(db, {
