@@ -12,11 +12,12 @@ import { inWorkingHours, schedule } from '../lib/schedule.mjs';
 import { sync } from '../lib/sync.mjs';
 import { dispatch, reconcile } from '../lib/reconcile.mjs';
 import { collectRuns, finishedSteps, listChains, startChain, stopChain } from '../lib/runs.mjs';
+import * as T3 from '../lib/t3.mjs';
 import { forget, homeDir, homeSettings, listLoops, loopStatus, migrate, register } from '../lib/home.mjs';
 
 const HELP = `my-day state CLI   (state dir: $MY_DAY_DIR or ./.my-day; machine home: $MY_DAY_HOME or ~/.my-day)
 
-Loop       bootstrap [--new-session]  config check, DB, dashboard, orphaned agents → JSON
+Loop       bootstrap [--new-session]  config check, DB, dashboard, host (T3 Code?), orphaned agents → JSON
            tick                       code-host sync + schedule + what to act on → JSON
            sync | schedule            the two halves of tick
            pause | resume             stop / restart dispatching (the dashboard has the same button)
@@ -366,6 +367,17 @@ try {
         S.setMeta(db(), 'sessionStartedAt', new Date().toISOString());
         S.addEvent(db(), { kind: 'session', message: 'loop session started' });
       }
+      // Where this session runs: in T3 Code the loop's own thread is what the user follows, and the
+      // dashboard links to it. Its link is asked for once per session (or when the thread changes);
+      // outside T3 Code a link from an earlier session is cleared.
+      const host = T3.detectHost();
+      if (host.name === 't3' && host.threadId) {
+        const same = S.getMeta(db(), 'hostThreadId') === host.threadId;
+        host.link = same && !opt['new-session'] ? S.getMeta(db(), 'hostThreadLink') || null : T3.threadLink(settings, host.threadId);
+      }
+      S.setMeta(db(), 'host', host.name);
+      S.setMeta(db(), 'hostThreadId', host.threadId ?? '');
+      S.setMeta(db(), 'hostThreadLink', host.link ?? '');
       // CLIs are checked here; MCP servers are only visible to the session, which reports them.
       const required = requiredSources(settings);
       const cli = {};
@@ -375,7 +387,7 @@ try {
       }
       const sources = { cli, checkMcp: required.filter((n) => n.startsWith('mcp:')) };
       const srv = await server.start(home, homeSettings(home, settings));
-      out({ missing: [], dir, home, server: srv, orphans: orphans.map((o) => o.id), migration, sources, settings });
+      out({ missing: [], dir, home, host, server: srv, orphans: orphans.map((o) => o.id), migration, sources, settings });
       break;
     }
     case 'schedule':

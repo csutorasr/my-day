@@ -7,6 +7,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, 
 import { join } from 'node:path';
 import * as S from './db.mjs';
 import { dispatch, parseResult, reconcile } from './reconcile.mjs';
+import { isHostVar } from './t3.mjs';
 
 const runsDir = (dir) => join(dir, 'runs');
 const TAIL = 2048;
@@ -96,6 +97,8 @@ export function workerPrompt({ kind, workspace, item, dryRun, task, repo, worktr
   ].join('\n');
 }
 
+const workerEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !isHostVar(k)));
+
 // Start step `idx` of the chain (mutates it); returns the child process, or null when it could not start.
 function spawnStep(dir, chain, idx, settings) {
   const step = chain.steps[idx];
@@ -115,8 +118,9 @@ function spawnStep(dir, chain, idx, settings) {
   let child;
   try {
     child = spawn(bin, ['-p', prompt, '--permission-mode', String(settings.permissionMode ?? 'acceptEdits'), '--output-format', 'json'], {
-      // The worker runs `$SM` from the worktree: point it at this loop's store.
-      cwd: step.cwd, detached: true, stdio: ['ignore', out, err], env: { ...process.env, MY_DAY_DIR: dir },
+      // The worker runs `$SM` from the worktree: point it at this loop's store. A run is not the
+      // loop's T3 Code thread, even when the loop runs in one: it gets none of the host's variables.
+      cwd: step.cwd, detached: true, stdio: ['ignore', out, err], env: { ...workerEnv(), MY_DAY_DIR: dir },
     });
   } catch (e) {
     child = { pid: undefined, error: e };

@@ -10,6 +10,9 @@ const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'state.mj
 const dir = mkdtempSync(join(tmpdir(), 'myday-cli-'));
 const home = mkdtempSync(join(tmpdir(), 'myday-cli-home-'));
 process.env.MY_DAY_HOME = home; // every spawned CLI inherits it; never touch the real ~/.my-day
+// The suite may itself run inside a T3 Code thread: no spawned CLI may see that, or reach a real t3.
+for (const k of Object.keys(process.env)) if (k === 'CLAUDE_CODE_ENTRYPOINT' || k.startsWith('T3CODE_') || k === 'T3_BIN') delete process.env[k];
+const FAKE_T3 = fileURLToPath(new URL('./fixtures/fake-t3.mjs', import.meta.url));
 const run = (...a) => execFileSync(process.execPath, [CLI, ...a], { env: { ...process.env, MY_DAY_DIR: dir }, encoding: 'utf8' }).trim();
 
 test('upsert → set → fail → show → summary round trip', () => {
@@ -250,4 +253,61 @@ test('bootstrap --new-session clears subagent orphans but keeps claude -p runs',
   assert.equal(JSON.parse(r('get', 'bug-1')).agent_id, null);
   assert.equal(JSON.parse(r('get', 'bug-3')).agent_id, null);
   assert.equal(JSON.parse(r('get', 'bug-2')).agent_id, 'run:bug-2-1');
+});
+
+// ---- T3 Code: the host the loop runs in, and a watch that is safe to start twice.
+
+async function freePort() {
+  const { createServer } = await import('node:net');
+  return new Promise((ok) => { const srv = createServer().listen(0, '127.0.0.1', () => { const p = srv.address().port; srv.close(() => ok(p)); }); });
+}
+
+async function t3Workspace(loopFrontmatter = '') {
+  const { chmodSync, mkdirSync, writeFileSync } = await import('node:fs');
+  chmodSync(FAKE_T3, 0o755);
+  const root = mkdtempSync(join(tmpdir(), 'myday-cli-t3-'));
+  const d = join(root, '.my-day');
+  mkdirSync(join(root, 'wt', 'web'), { recursive: true });
+  mkdirSync(d, { recursive: true });
+  writeFileSync(join(d, 'LOOP.md'), `---\nport: ${await freePort()}\n${loopFrontmatter}---\n# Loop\n## Files\n`);
+  const env = { ...process.env, MY_DAY_DIR: d, GLAB_BIN: '/usr/bin/false', FAKE_T3_HOME: join(root, 't3-server'), T3_BIN: FAKE_T3 };
+  const r = (...a) => execFileSync(process.execPath, [CLI, ...a], { env, encoding: 'utf8' }).trim();
+  const t3 = (args, input) => execFileSync(process.execPath, [FAKE_T3, ...args], { env, encoding: 'utf8', input });
+  return { root, d, env, r, t3 };
+}
+
+test('bootstrap in a T3 Code thread reports the host and the loop thread\'s link, asked for once per session', async () => {
+  const { readFileSync } = await import('node:fs');
+  const w = await t3Workspace();
+  w.t3(['project', 'add', w.root]);
+  const { threadId } = JSON.parse(w.t3(['thread', 'start', '--json', w.root, 'start my day']));
+  // Inside T3 Code the CLI is named by $T3CODE_CLI_PATH; nothing else points at it here.
+  const { T3_BIN: _, ...bare } = w.env;
+  const inT3 = { ...bare, CLAUDE_CODE_ENTRYPOINT: 't3-code', T3CODE_THREAD_ID: threadId, T3CODE_CLI_PATH: FAKE_T3 };
+  const boot = (env, ...a) => JSON.parse(execFileSync(process.execPath, [CLI, 'bootstrap', ...a], { env, encoding: 'utf8' }));
+  const { DatabaseSync } = await import('node:sqlite');
+  const meta = () => { const db = new DatabaseSync(join(w.d, 'state.db')); const rows = Object.fromEntries(db.prepare("SELECT key, value FROM meta WHERE key LIKE 'host%'").all().map((x) => [x.key, x.value])); db.close(); return rows; };
+  const shows = () => readFileSync(join(w.root, 't3-server', 'calls.jsonl'), 'utf8').split('\n').filter((l) => l.includes('"show"')).length;
+  try {
+    const b = boot(inT3, '--new-session');
+    assert.deepEqual(b.host, { name: 't3', threadId, link: `https://app.t3.codes/threads/fake-env/${encodeURIComponent(threadId)}` });
+    assert.deepEqual(meta(), { host: 't3', hostThreadId: threadId, hostThreadLink: b.host.link });
+    // Later bootstraps of the session reuse the stored link instead of asking t3 again.
+    const before = shows();
+    assert.equal(boot(inT3).host.link, b.host.link);
+    assert.equal(shows(), before);
+    // A link t3 could not give is not asked for again until the next session either.
+    const down = { ...inT3, FAKE_T3_DOWN: '1' };
+    assert.equal(boot(down, '--new-session').host.link, null);
+    const failed = shows();
+    assert.equal(boot(down).host.link, null);
+    assert.equal(boot(inT3).host.link, null);
+    assert.equal(shows(), failed);
+    assert.equal(boot(inT3, '--new-session').host.link, b.host.link);
+    // The same loop started outside T3 Code: no stale thread link.
+    assert.deepEqual(boot(bare, '--new-session').host, { name: 'claude-code', threadId: null });
+    assert.deepEqual(meta(), { host: 'claude-code', hostThreadId: '', hostThreadLink: '' });
+  } finally {
+    w.r('server', 'stop');
+  }
 });
