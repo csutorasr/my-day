@@ -11,7 +11,8 @@ Tracker, code host, group, ticket pattern and AI reviewer are in `LOOP.md` front
   Keep this list in sync with the `key not in (…)` clauses below and in `QUERY-INBOX.md`.
 
 ## My merge requests
-Handled by `$SM tick` (sync): upserts my open MRs, links them to tracked tickets by
+Handled by `$SM tick` (sync): upserts my open MRs (`mineBy` in `LOOP.md`: assigned to me,
+opened by me and/or nobody assigned), links them to tracked tickets by
 `ticketPattern`, stores gate data + `data.verdict` (merge | rebase | fix-review |
 fix-pipeline | wait), and marks merged/closed ones.
 

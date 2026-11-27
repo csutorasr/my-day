@@ -18,6 +18,8 @@ runTimeoutMinutes: 90     # a run still alive after this is stopped and fails
 tracker: <TRACKER>        # jira | github | gitlab | linear | azure | other | none
 forge: <FORGE>            # gitlab | github | none (no code-host sync)
 group: <GROUP>/
+mineBy: assignee          # which open MRs/PRs are mine, comma-separated: assignee | author (opened by me)
+                          # | unassigned (nobody assigned, e.g. a bot's; needs group); both = author, assignee
 ticketPattern: '<TICKET_REGEX>'
 aiReviewer: <AI_REVIEWER_BOT>   # bot account(s) of AI reviewers, comma-separated, if any
 requires: <REQUIRES>      # sources the loop cannot work without, e.g. mcp:atlassian, cli:glab

@@ -172,7 +172,7 @@ optional `X.local.md` next to it holds personal overrides and is gitignored.
 
 | File | Defines |
 |---|---|
-| `LOOP.md` | Cadence, working hours, parallel agents, retry limit, dry run, `dreamSchedule` and any other `<name>Schedule` (e.g. `statusSchedule: Fri 14:00`) — plus the scope the Node side reads: `tracker`, `forge`, `group`, `ticketPattern`, `aiReviewer`, `targetBranch`, `requires`. Body: `## Files` (the manifest) and *Tick priority* |
+| `LOOP.md` | Cadence, working hours, parallel agents, retry limit, dry run, `dreamSchedule` and any other `<name>Schedule` (e.g. `statusSchedule: Fri 14:00`) — plus the scope the Node side reads: `tracker`, `forge`, `group`, `mineBy` (which MRs/PRs are mine, comma-separated: `assignee` (default), `author`, `unassigned` — nobody assigned, e.g. a bot's, needs `group`; `both` = `author, assignee`), `ticketPattern`, `aiReviewer`, `targetBranch`, `requires`. Body: `## Files` (the manifest) and *Tick priority* |
 | `WRITES.md` | `auto` / `ask` / `never` per outward action (every profile; optional, absent = all `auto`) |
 | `QUERY-MY-TASKS.md` | Tracker queries for your tickets; ignored bucket tickets |
 | `QUERY-MY-REVIEWS.md` | Review-queue behaviour (the sync itself is automatic) |

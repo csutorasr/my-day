@@ -38,6 +38,7 @@ export const DEFAULTS = {
   tracker: '', // jira | github | gitlab | linear | azure | other | none
   forge: 'gitlab', // gitlab | github
   group: '', // code-host group/org prefix whose MRs/PRs count
+  mineBy: 'assignee', // which open MRs/PRs are mine, comma-separated: assignee | author | unassigned (needs group); both = author, assignee
   ticketPattern: '[A-Z][A-Z0-9]+-\\d+',
   aiReviewer: '', // bot account(s) whose review comments count as AI review (comma-separated)
   targetBranch: 'main',
