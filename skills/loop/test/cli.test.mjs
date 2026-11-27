@@ -10,6 +10,9 @@ const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'state.mj
 const dir = mkdtempSync(join(tmpdir(), 'myday-cli-'));
 const home = mkdtempSync(join(tmpdir(), 'myday-cli-home-'));
 process.env.MY_DAY_HOME = home; // every spawned CLI inherits it; never touch the real ~/.my-day
+// The suite may itself run inside a T3 Code thread: no spawned CLI may see that, or reach a real t3.
+for (const k of Object.keys(process.env)) if (k === 'CLAUDE_CODE_ENTRYPOINT' || k.startsWith('T3CODE_') || k === 'T3_BIN') delete process.env[k];
+const FAKE_T3 = fileURLToPath(new URL('./fixtures/fake-t3.mjs', import.meta.url));
 const run = (...a) => execFileSync(process.execPath, [CLI, ...a], { env: { ...process.env, MY_DAY_DIR: dir }, encoding: 'utf8' }).trim();
 
 test('upsert → set → fail → show → summary round trip', () => {
@@ -250,4 +253,147 @@ test('bootstrap --new-session clears subagent orphans but keeps claude -p runs',
   assert.equal(JSON.parse(r('get', 'bug-1')).agent_id, null);
   assert.equal(JSON.parse(r('get', 'bug-3')).agent_id, null);
   assert.equal(JSON.parse(r('get', 'bug-2')).agent_id, 'run:bug-2-1');
+});
+
+// ---- T3 Code: the host the loop runs in, and a watch that is safe to start twice.
+
+async function freePort() {
+  const { createServer } = await import('node:net');
+  return new Promise((ok) => { const srv = createServer().listen(0, '127.0.0.1', () => { const p = srv.address().port; srv.close(() => ok(p)); }); });
+}
+
+async function t3Workspace(loopFrontmatter = '') {
+  const { chmodSync, mkdirSync, writeFileSync } = await import('node:fs');
+  chmodSync(FAKE_T3, 0o755);
+  const root = mkdtempSync(join(tmpdir(), 'myday-cli-t3-'));
+  const d = join(root, '.my-day');
+  mkdirSync(join(root, 'wt', 'web'), { recursive: true });
+  mkdirSync(d, { recursive: true });
+  writeFileSync(join(d, 'LOOP.md'), `---\nport: ${await freePort()}\n${loopFrontmatter}---\n# Loop\n## Files\n`);
+  const env = { ...process.env, MY_DAY_DIR: d, GLAB_BIN: '/usr/bin/false', FAKE_T3_HOME: join(root, 't3-server'), T3_BIN: FAKE_T3 };
+  const r = (...a) => execFileSync(process.execPath, [CLI, ...a], { env, encoding: 'utf8' }).trim();
+  const t3 = (args, input) => execFileSync(process.execPath, [FAKE_T3, ...args], { env, encoding: 'utf8', input });
+  return { root, d, env, r, t3 };
+}
+
+test('bootstrap in a T3 Code thread reports the host and the loop thread\'s link, asked for once per session', async () => {
+  const { readFileSync } = await import('node:fs');
+  const w = await t3Workspace();
+  w.t3(['project', 'add', w.root]);
+  const { threadId } = JSON.parse(w.t3(['thread', 'start', '--json', w.root, 'start my day']));
+  // Inside T3 Code the CLI is named by $T3CODE_CLI_PATH; nothing else points at it here.
+  const { T3_BIN: _, ...bare } = w.env;
+  const inT3 = { ...bare, CLAUDE_CODE_ENTRYPOINT: 't3-code', T3CODE_THREAD_ID: threadId, T3CODE_CLI_PATH: FAKE_T3 };
+  const boot = (env, ...a) => JSON.parse(execFileSync(process.execPath, [CLI, 'bootstrap', ...a], { env, encoding: 'utf8' }));
+  const { DatabaseSync } = await import('node:sqlite');
+  const meta = () => { const db = new DatabaseSync(join(w.d, 'state.db')); const rows = Object.fromEntries(db.prepare("SELECT key, value FROM meta WHERE key LIKE 'host%'").all().map((x) => [x.key, x.value])); db.close(); return rows; };
+  const shows = () => readFileSync(join(w.root, 't3-server', 'calls.jsonl'), 'utf8').split('\n').filter((l) => l.includes('"show"')).length;
+  try {
+    const b = boot(inT3, '--new-session');
+    assert.deepEqual(b.host, { name: 't3', threadId, link: `https://app.t3.codes/threads/fake-env/${encodeURIComponent(threadId)}` });
+    assert.deepEqual(meta(), { host: 't3', hostThreadId: threadId, hostThreadLink: b.host.link });
+    // Later bootstraps of the session reuse the stored link instead of asking t3 again.
+    const before = shows();
+    assert.equal(boot(inT3).host.link, b.host.link);
+    assert.equal(shows(), before);
+    // A link t3 could not give is not asked for again until the next session either.
+    const down = { ...inT3, FAKE_T3_DOWN: '1' };
+    assert.equal(boot(down, '--new-session').host.link, null);
+    const failed = shows();
+    assert.equal(boot(down).host.link, null);
+    assert.equal(boot(inT3).host.link, null);
+    assert.equal(shows(), failed);
+    assert.equal(boot(inT3, '--new-session').host.link, b.host.link);
+    // The same loop started outside T3 Code: no stale thread link.
+    assert.deepEqual(boot(bare, '--new-session').host, { name: 'claude-code', threadId: null });
+    assert.deepEqual(meta(), { host: 'claude-code', hostThreadId: '', hostThreadLink: '' });
+  } finally {
+    w.r('server', 'stop');
+  }
+});
+
+function watcher(w, ...extra) {
+  return import('node:child_process').then(({ spawn }) => {
+    const p = spawn(process.execPath, [CLI, 'watch', '--interval', '50'], { env: { ...w.env, ...Object.assign({}, ...extra) }, stdio: ['ignore', 'pipe', 'inherit'] });
+    p.lines = [];
+    p.exited = new Promise((ok) => p.on('exit', (code) => ok(code)));
+    let buf = '';
+    p.stdout.on('data', (c) => { buf += c; const parts = buf.split('\n'); buf = parts.pop(); p.lines.push(...parts.filter(Boolean).map((l) => JSON.parse(l))); });
+    return p;
+  });
+}
+const until = async (fn, ms = 8000) => { for (const end = Date.now() + ms; ;) { const v = await fn(); if (v) return v; if (Date.now() > end) throw new Error('timed out waiting'); await new Promise((ok) => setTimeout(ok, 25)); } };
+
+test('watch started twice: the new one takes over, the old one says so and ends by itself', async () => {
+  const { readFileSync } = await import('node:fs');
+  const w = await t3Workspace();
+  w.r('upsert', '--type', 'bug', '--ext', 'jira:W-1');
+  const lock = join(w.d, 'watch.lock');
+  const held = () => { try { return JSON.parse(readFileSync(lock, 'utf8')); } catch { return undefined; } };
+  const first = await watcher(w);
+  try {
+    await until(() => held()?.pid === first.pid);
+    w.r('event', 'bug-1', 'dashboard-request', 'one');
+    await until(() => first.lines.length === 1);
+    w.r('tick'); // the loop acted on it (a watch starts from what tick has not consumed yet)
+    const second = await watcher(w);
+    try {
+      // The old watch ends on its own, with a last line naming who replaced it.
+      assert.equal(await first.exited, 0);
+      assert.deepEqual(first.lines.at(-1), { kind: 'watch-replaced', by: second.pid });
+      await until(() => held()?.pid === second.pid);
+      w.r('event', 'bug-1', 'dashboard-request', 'two');
+      await until(() => second.lines.some((l) => l.message === 'two'));
+      // Each event reached exactly one watch.
+      assert.deepEqual(first.lines.filter((l) => l.kind === 'dashboard-request').map((l) => l.message), ['one']);
+      assert.deepEqual(second.lines.filter((l) => l.kind === 'dashboard-request').map((l) => l.message), ['two']);
+      // A one-shot watch is no takeover.
+      w.r('watch', '--once');
+      assert.equal(held().pid, second.pid);
+    } finally {
+      second.kill('SIGTERM');
+      await second.exited;
+    }
+    // A watch that is stopped says so in the lock; it does not delete it.
+    assert.equal(held().pid, second.pid);
+    assert.ok(held().endedAt);
+  } finally {
+    first.kill('SIGKILL');
+  }
+});
+
+test('a watch replaced while busy reports nothing more and never claims the lock back, even after its successor ended', async () => {
+  const { chmodSync, mkdirSync, readFileSync, writeFileSync } = await import('node:fs');
+  const w = await t3Workspace();
+  w.r('upsert', '--type', 'bug', '--ext', 'jira:W-2');
+  // A claude -p chain whose process is gone; `ps` blocks until the test opens the gate, so the first
+  // watch is busy looking at runs while it is replaced.
+  mkdirSync(join(w.d, 'runs'), { recursive: true });
+  const now = new Date().toISOString();
+  writeFileSync(join(w.d, 'runs', 'bug-1-1.json'), JSON.stringify({ id: 'bug-1-1', item: 'bug-1', status: 'running', startedAt: now, steps: [{ repo: 'web', status: 'running', pid: 999999, lstart: 'x', startedAt: now }] }));
+  const ps = join(w.root, 'slow-ps');
+  const gate = join(w.root, 'ps-gate');
+  writeFileSync(ps, `#!/bin/sh\nwhile [ ! -f ${gate} ]; do sleep 0.05; done\nexit 1\n`);
+  chmodSync(ps, 0o755);
+  const lock = join(w.d, 'watch.lock');
+  const held = () => { try { return JSON.parse(readFileSync(lock, 'utf8')); } catch { return undefined; } };
+  const first = await watcher(w, { MY_DAY_PS: ps });
+  try {
+    await until(() => held()?.pid === first.pid);
+    // A second watch takes over (its own `ps` answers at once) and is stopped again, all while the
+    // first one is still waiting for `ps`.
+    const second = await watcher(w);
+    await until(() => held()?.pid === second.pid, 10_000);
+    second.kill('SIGTERM');
+    await second.exited;
+    assert.ok(held().endedAt);
+    writeFileSync(gate, '');
+    assert.equal(await first.exited, 0);
+    // No run-finished from the old watch (the next watch reports it), and no claim on the lock.
+    assert.deepEqual(first.lines, [{ kind: 'watch-replaced', by: second.pid }]);
+    assert.equal(held().pid, second.pid);
+  } finally {
+    writeFileSync(gate, '');
+    first.kill('SIGKILL');
+  }
 });

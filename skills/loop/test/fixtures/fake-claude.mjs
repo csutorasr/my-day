@@ -8,6 +8,7 @@
 //   verbose       like ok, printed as --verbose does: a JSON array of messages, the result last
 //   child         start a child that ignores SIGTERM (same process group), write its pid, then sleep
 //   multiline     like ok, with a summary spanning lines (one of them looks like a Task: line)
+//   env           like ok; the report's `hostEnv` lists the T3 Code host variables it inherited
 const argv = process.argv.slice(2);
 const prompt = argv[argv.indexOf('-p') + 1] ?? '';
 const field = (name) => new RegExp(`^${name}: (.*)$`, 'm').exec(prompt)?.[1]?.trim() ?? '';
@@ -27,13 +28,14 @@ if (task === 'child') {
   setTimeout(() => {}, 60_000);
 } else if (task === 'sleep') setTimeout(() => {}, 60_000);
 else {
-  const known = ['ok', 'verbose', 'multiline'].includes(task) || task.startsWith('fail-');
+  const known = ['ok', 'verbose', 'multiline', 'env'].includes(task) || task.startsWith('fail-');
   const failed = task === `fail-${repo}`;
   const report = !known
     ? { status: 'failed', summary: `unknown task "${task}"` }
     : failed
     ? { status: 'failed', summary: `${repo} broke`, blockers: ['tests red'] }
     : { status: 'done', branch: `b-${repo}`, mrUrl: `https://git.example.com/x/${repo}/-/merge_requests/1`, commits: [`c-${repo} change`], summary: task === 'multiline' ? `${repo} ok\nTask: something else` : `${repo} ok`, stateDir: process.env.MY_DAY_DIR ?? null };
+  if (task === 'env') report.hostEnv = Object.keys(process.env).filter((k) => k === 'CLAUDE_CODE_ENTRYPOINT' || k.startsWith('T3CODE_')).sort();
   const text = `Worked in ${process.cwd()}.\n\`\`\`json\n{"note":"an earlier block"}\n\`\`\`\nDone.\n\`\`\`json\n${JSON.stringify(report)}\n\`\`\`\n`;
   const result = { type: 'result', is_error: false, result: text };
   process.stdout.write(JSON.stringify(task === 'verbose' ? [{ type: 'system', subtype: 'init' }, { type: 'assistant', message: {} }, result] : result));

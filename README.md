@@ -1,6 +1,7 @@
 # my-day
 
-A run-forever development loop for [Claude Code](https://claude.com/claude-code). You start
+A run-forever development loop for [Claude Code](https://claude.com/claude-code), also in a
+[T3 Code](https://t3.codes) thread (see [Using with T3 Code](#using-with-t3-code)). You start
 it once; it keeps your merge requests moving, fixes review comments, develops the tickets
 assigned to you on isolated git worktrees, triages unassigned work, and only pulls you in
 for the things that need a human: brainstorms, decisions and reviews.
@@ -23,12 +24,12 @@ them all.
 flowchart LR
   subgraph you["You"]
     direction TB
-    Y1["Answer questions<br/>(in the session / Remote Control)"]
+    Y1["Answer questions<br/>(in the session: T3 Code thread / Remote Control)"]
     Y2["Brainstorm new stories"]
     Y3["Review teammates' MRs<br/>when the dashboard pings"]
   end
 
-  subgraph loop["my-day loop (Claude Code session)"]
+  subgraph loop["my-day loop (Claude Code session or T3 Code thread)"]
     direction TB
     T["tick<br/>sync MRs, reviews, tickets"] --> V{"merge-gate<br/>verdict"}
     V -->|merge| M["Merge<br/>(gates + trains)"]
@@ -71,8 +72,8 @@ flowchart LR
 
 ## Requirements
 
-- Claude Code, with the `loop` skill (built in) and ideally the
-  [superpowers](https://github.com/obra/superpowers) skills (debugging, TDD, code review).
+- Claude Code — or T3 Code running Claude threads — with the `loop` skill (built in) and ideally
+  the [superpowers](https://github.com/obra/superpowers) skills (debugging, TDD, code review).
 - Node.js ≥ 22.13 (uses the built-in `node:sqlite`; developed on Node 24).
 - `glab` (GitLab) or `gh` (GitHub), authenticated.
 - Access to your tracker: an MCP server (e.g. Atlassian for Jira, Linear) or a CLI
@@ -110,7 +111,7 @@ Then the dashboard opens at `http://127.0.0.1:4711` and the loop starts.
 ## Several loops
 
 Start `/my-day:loop` in each workspace folder you want worked on (`~/work/client-a`,
-`~/work/client-b`, …): one Claude Code session per folder, each with its own `.my-day/` store and
+`~/work/client-b`, …): one Claude Code session (or T3 Code thread) per folder, each with its own `.my-day/` store and
 config. The first loop starts the machine's one dashboard; the others join it. The dashboard shows
 the loops whose session is running; with more than one, a filter picks workspaces and **Show
 stopped** adds the rest. `stop` in a session marks its loop stopped (`state.mjs stop`).
@@ -165,6 +166,28 @@ Smoke test by hand (CI uses a fake `claude`): in a workspace with `runner: claud
 worktree, then `state.mjs run <item> --kind develop --task "add a line to README, local only" --chain <repo>=<worktree>`;
 `state.mjs runs` shows it running, and the next `tick` reports it under `runs.finished`.
 
+## Using with T3 Code
+
+[T3 Code](https://t3.codes) runs Claude threads on the Claude Code harness, so the plugin works in
+a T3 thread as it does in a terminal: the loop, its wakeups and the dashboard watch are the same.
+What changes is where you follow the loop.
+
+- **Install** the plugin at **user** scope (`claude plugin marketplace add csutorasr/my-day &&
+  claude plugin install my-day@csutorasr --scope user`), start a Claude thread in the workspace's
+  T3 project and send `/my-day:loop`.
+- **The loop's thread.** `bootstrap` reports `host: t3` with the loop's own thread and its link
+  (asked from the `t3` CLI once per session; T3 Code names the CLI in `$T3CODE_CLI_PATH`). The
+  dashboard opens in an in-app tab (`preview_open`) instead of the system browser and shows a
+  **Loop thread** link back to that thread (per loop in the health strip when several are shown).
+  You follow the loop in its thread, on desktop or phone; Claude Code's Remote Control is not
+  needed (and not there).
+- **The watch.** T3 Code has no `TaskList` tool, so the loop never looks for its running watch:
+  `state.mjs watch` can be started again at any time. The newest one takes over
+  (`.my-day/watch.lock`) and the older one prints `watch-replaced` and ends; an event is reported
+  by one watch only.
+- `claude -p` workers (`runner: claude-p`) started from a loop in T3 Code do not inherit its
+  `CLAUDE_CODE_ENTRYPOINT` / `T3CODE_*` variables: they are not the loop's thread.
+
 ## Configuration
 
 `.my-day/` in the workspace root. Every `X.md` is shared with the team (commit it); an
@@ -194,13 +217,15 @@ Add to `.gitignore`:
 .my-day/*.local.md
 .my-day/state.db*
 .my-day/dreams/
+.my-day/runs/
+.my-day/watch.lock*
 .worktrees/
 ```
 
 ## Everyday use
 
-- The loop talks to you in its Claude Code session — use Remote Control to follow it from
-  your phone. Questions get IDs (`q-4 · bug-2 …`); answer in the session.
+- The loop talks to you in its session: a T3 Code thread (desktop or phone), or a Claude Code
+  session you follow from your phone with Remote Control. Questions get IDs (`q-4 · bug-2 …`); answer in the session.
 - Items have short IDs: `bug-1`, `story-2`, `mr-4`, `review-5`.
 - `summary`, `summary since Monday`, `elaborate bug-1`, `retry bug-1`, `pause`, `resume`,
   `stop`.
@@ -227,7 +252,7 @@ CLI, `skills/loop/bin/state.mjs`, backed by SQLite in `.my-day/state.db`:
 
 | Command | Does |
 |---|---|
-| `bootstrap` | Config check, DB, registers the loop in `~/.my-day`, one-time migration, shared dashboard server, orphaned agents |
+| `bootstrap` | Config check, DB, registers the loop in `~/.my-day`, one-time migration, shared dashboard server, the host (Claude Code or a T3 Code thread), orphaned agents |
 | `loops`, `stop` | The machine's loops (running / stopped); mark this loop stopped |
 | `run`, `runs`, `run-stop` | `claude -p` workers per repo (`runner: claude-p`): start a chain, list, stop |
 | `tick` | Code-host sync (MRs + review requests), merge-gate verdicts, schedule, compact to-do JSON |
@@ -235,7 +260,7 @@ CLI, `skills/loop/bin/state.mjs`, backed by SQLite in `.my-day/state.db`:
 | `dream-data` / `dream-done` | History bundle for a dream; record `lastDreamAt` |
 | `ask --draft`, `wrote` | A draft of an outward write to approve; mark an approved one written (`tick` lists approved drafts until then) |
 | `source`, `sources`, `schedule-done` | Health of the required sources; record a `<name>Schedule` run |
-| `pause` / `resume`, `watch` | Stop dispatching; stream dashboard clicks and finished runs to the session |
+| `pause` / `resume`, `watch` | Stop dispatching; stream dashboard clicks and finished runs to the session (safe to start twice: the newest watch takes over) |
 | `summary`, `show`, `list`, `ask`, `answer`, … | State queries and updates (`state.mjs help`) |
 
 `bin/forge.mjs` reads GitLab (`glab`) and GitHub (`gh`) with one output shape. The

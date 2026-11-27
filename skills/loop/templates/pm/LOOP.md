@@ -54,5 +54,5 @@ Refresh (read-only) is fine; no brainstorms, drafts or outward writes. Wakeups a
 60 minutes, so schedule hourly `noop` ticks until the window opens.
 
 ## Communication
-All questions and drafts go to the main session (reached via Remote Control). The dashboard
-mirrors them and can approve, edit or decline drafts.
+All questions and drafts go to the loop's session (its T3 Code thread, or Remote Control). The
+dashboard mirrors them and can approve, edit or decline drafts.

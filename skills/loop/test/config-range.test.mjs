@@ -148,3 +148,20 @@ test('runner defaults to agent', () => {
   writeFileSync(join(d, 'LOOP.md'), '---\n---\n');
   assert.equal(loopSettings(d).runner, 'agent');
 });
+
+test('skills and templates are host-neutral: nothing depends on TaskList or on Remote Control alone', () => {
+  const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
+  const loop = read('../SKILL.md');
+  // The watch is armed without looking for a running one; T3 Code has no TaskList.
+  assert.doesNotMatch(loop, /unless one is already running \(TaskList\)/);
+  assert.match(loop, /never\s+look for it with TaskList/);
+  assert.match(loop, /watch-replaced/);
+  // The dashboard opens in an in-app tab in T3 Code, in the browser elsewhere.
+  assert.match(loop, /mcp__t3-code__preview_open/);
+  assert.match(loop, /open <server\.url>/);
+  for (const p of ['../SKILL.md', '../templates/dev/LOOP.md', '../templates/dev-bundle/LOOP.md', '../templates/pm/LOOP.md']) {
+    for (const para of read(p).split(/\n(?=\S)/).filter((l) => /Remote\s+Control/.test(l))) assert.match(para, /T3 Code thread/, p);
+  }
+  // Every ignore list covers the watch lock and its temp files (watch.lock.<pid>).
+  for (const p of ['../../setup/SKILL.md', '../../../README.md']) assert.match(read(p), /^\.my-day\/watch\.lock\*$/m, p);
+});

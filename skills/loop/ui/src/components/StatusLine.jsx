@@ -4,7 +4,7 @@ import { useDashboard } from '../dashboard.jsx';
 import { useLoopView } from '../loop.jsx';
 import { hhmm, nextCheck, plural } from '../format.js';
 import { mrLanes } from './MrBoard.jsx';
-import { PauseButton } from './Header.jsx';
+import { LoopThreadLink, PauseButton } from './Header.jsx';
 
 // The health strip above the inbox: live or not, merge requests, agents, and any required source
 // (MCP server / CLI) that is down. The loop counts open the loop view; on phones (no loop view) they
@@ -60,6 +60,7 @@ export function StatusLine() {
             </span>
             <span>{!l.running ? 'Stopped' : l.loop.paused ? 'Paused' : nextCheck(l.loop) || 'Live'}</span>
             <span>{plural(s.items.filter((i) => i.loop === l.id && i.agent_id).length, 'agent')} busy</span>
+            <LoopThreadLink loop={l} size="xs" />
             {l.running && <PauseButton loop={l} act={act} size="xs" />}
           </li>
         ))}

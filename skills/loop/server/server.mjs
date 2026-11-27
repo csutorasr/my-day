@@ -113,6 +113,8 @@ function summaryOfOpen(l) {
     ...base,
     ...loopStatus(meta(l)),
     paused: S.getMeta(l.db, 'paused') === 'true',
+    // Where the loop's session runs; in T3 Code, the link that opens its thread.
+    host: { name: S.getMeta(l.db, 'host') || 'claude-code', threadLink: S.getMeta(l.db, 'hostThreadLink') || null },
     counts: {
       questions: S.listQuestions(l.db, { status: 'open' }).length,
       failed: items.filter((i) => i.failed).length,

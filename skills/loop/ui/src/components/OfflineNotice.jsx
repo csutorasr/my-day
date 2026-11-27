@@ -14,7 +14,7 @@ export function OfflineNotice() {
       <AlertTitle>The dashboard lost its connection to the loop.</AlertTitle>
       <AlertDescription>
         {updatedAt ? `What you see is from ${hhmm(updatedAt)} and may be out of date. ` : ''}
-        It reconnects by itself; if the loop stopped, start it again in Claude Code with <code className="font-mono">/my-day:loop</code>.
+        It reconnects by itself; if the loop stopped, start it again in its session (Claude Code or a T3 Code thread) with <code className="font-mono">/my-day:loop</code>.
       </AlertDescription>
     </Alert>
   );

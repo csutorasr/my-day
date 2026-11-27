@@ -62,4 +62,5 @@ Refresh (read-only) is fine; no dispatches, brainstorms or outward writes. Wakeu
 60 minutes, so schedule hourly `noop` ticks until the window opens.
 
 ## Communication
-All questions go to the main session (reached via Remote Control). The dashboard only mirrors them.
+All questions go to the loop's session (its T3 Code thread, or Remote Control). The dashboard
+only mirrors them.
