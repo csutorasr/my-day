@@ -169,6 +169,27 @@ test('runner: t3 — the templates keep their runner, their commented t3 keys ch
   assert.deepEqual(requiredSources(s), ['cli:t3']);
 });
 
+test('the t3 runner in the skills: setup offers it, the loop interrupts what it let go of, the docs stay honest', () => {
+  const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
+  const loop = read('../SKILL.md');
+  assert.match(loop, /\*\*t3\*\* — one T3 Code thread per repo/);
+  // Threads let go of by run-stop and by a timeout are interrupted when the session can.
+  assert.match(loop, /`stillRunning`; a timeout does the same in `tick`'s\s+`runs\.stillRunning`\. For each, use `mcp__t3-code__t3_thread_interrupt`/);
+  assert.match(loop, /run-resumed/);
+  assert.match(loop, /`--force` only when they say so/);
+  // "No worker thread can start" belongs to runner: t3 only.
+  assert.match(loop, /with `runner: t3` add that no worker thread can start until it is fixed/);
+  const setup = read('../../setup/SKILL.md');
+  assert.match(setup, /## 4\. T3 Code/);
+  assert.match(setup, /t3 register <workspace>/);
+  assert.match(setup, /Always ask before registering anything/);
+  assert.match(read('../../worker/SKILL.md'), /MY_DAY_DIR=<state dir>/);
+  // The README says what the timeout does with a wait, not that a wait never counts.
+  const readme = read('../../../README.md');
+  assert.doesNotMatch(readme, /The wait does not count towards/);
+  assert.match(readme, /only a wait answered before that counts as working time/);
+});
+
 test('skills and templates are host-neutral: nothing depends on TaskList or on Remote Control alone', () => {
   const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
   const loop = read('../SKILL.md');
