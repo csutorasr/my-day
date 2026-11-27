@@ -14,6 +14,16 @@ dryRun: false             # true = log outward actions instead of doing them (re
 runner: claude-p
 permissionMode: acceptEdits   # claude -p --permission-mode (acceptEdits | bypassPermissions | …)
 runTimeoutMinutes: 90     # a run still alive after this is stopped and fails
+# In T3 Code: `runner: t3` runs the same chain as T3 Code threads (one per repo worktree) that you can
+# open and answer. Then (uncomment what you change):
+# t3Model: ''               # model of the worker threads; '' = the T3 project's default model
+# t3Provider: claudeAgent   # T3 provider instance, passed with t3Model (claudeAgent | codex | …)
+# t3Options: effort=high    # model options, comma-separated id=value
+# t3ModelRebase: claude-haiku-5-5   # per kind: t3Model<Kind> (+ t3Provider<Kind>, t3Options<Kind>);
+#                                     Kind = Develop | Bug | ReviewFix | PipelineFix | Rebase
+# t3Project: worktree       # worktree = each worker worktree becomes its own T3 project (the thread
+#                             runs in it) | containing = start in the T3 project that holds the worktree
+# t3Cleanup: keep           # remove = with a worktree, also remove its T3 project and worker threads
 # Scope (read by `state.mjs tick`)
 tracker: <TRACKER>        # jira | github | gitlab | linear | azure | other | none
 forge: <FORGE>            # gitlab | github | none (no code-host sync)
@@ -52,8 +62,8 @@ only when 1–5 find nothing actionable. Code host and reviews come from `$SM ti
 4. My bugs → next transition of `WORKFLOW-BUG.md`.
 5. My stories / tasks / subtasks → next transition of `WORKFLOW-STORY.md` / `WORKFLOW-SUBTASK.md`.
    Brainstorm, spec and planning steps run in the session, one brainstorm at a time (queue others
-   as `brainstorm-queued`); code steps → `develop` / `bug` runs: one `claude -p` per repo the
-   ticket touches, in `DEVELOP.md`'s cross-repo order.
+   as `brainstorm-queued`); code steps → `develop` / `bug` runs: one run (`claude -p`, or a T3
+   Code thread with `runner: t3`) per repo the ticket touches, in `DEVELOP.md`'s cross-repo order.
 6. Review requests for me (`QUERY-MY-REVIEWS.md`) — dashboard notification only.
 7. Inbox triage (`TRIAGE.md`) — only when 1–5 have nothing actionable.
 

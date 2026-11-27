@@ -149,6 +149,26 @@ test('runner defaults to agent', () => {
   assert.equal(loopSettings(d).runner, 'agent');
 });
 
+test('runner: t3 — the templates keep their runner, their commented t3 keys change nothing, LOOP.md keys reach the settings', () => {
+  for (const [profile, runner] of [['dev', 'agent'], ['dev-bundle', 'claude-p']]) {
+    const d = mkdtempSync(join(tmpdir(), 'myday-t3-'));
+    const text = readFileSync(new URL(`../templates/${profile}/LOOP.md`, import.meta.url), 'utf8');
+    writeFileSync(join(d, 'LOOP.md'), text);
+    const s = loopSettings(d);
+    assert.equal(s.runner, runner, profile);
+    assert.deepEqual([s.t3Bin, s.t3Provider, s.t3Model, s.t3Options, s.t3Project, s.t3Cleanup, s.t3PollSeconds], ['', 'claudeAgent', '', '', 'worktree', 'keep', 10], profile);
+    assert.equal(s.t3ModelRebase, undefined, profile);
+    // The template documents every t3 key a user may set.
+    for (const key of ['t3Model', 't3Provider', 't3Options', 't3ModelRebase', 't3Project', 't3Cleanup']) assert.match(text, new RegExp(`^# ${key}: `, 'm'), `${profile} ${key}`);
+  }
+  const d = mkdtempSync(join(tmpdir(), 'myday-t3-'));
+  writeFileSync(join(d, 'LOOP.md'), "---\nrunner: t3\nt3Model: claude-opus-5-5\nt3Options: effort=high, fastMode=true   # shared\nt3ModelRebase: claude-haiku-5-5\nt3Project: containing\n---\n");
+  writeFileSync(join(d, 'LOOP.local.md'), '---\nt3Bin: /opt/t3/bin/t3\nt3PollSeconds: 30\n---\n');
+  const s = loopSettings(d);
+  assert.deepEqual([s.runner, s.t3Model, s.t3Options, s.t3ModelRebase, s.t3Project, s.t3Bin, s.t3PollSeconds], ['t3', 'claude-opus-5-5', 'effort=high, fastMode=true', 'claude-haiku-5-5', 'containing', '/opt/t3/bin/t3', 30]);
+  assert.deepEqual(requiredSources(s), ['cli:t3']);
+});
+
 test('skills and templates are host-neutral: nothing depends on TaskList or on Remote Control alone', () => {
   const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
   const loop = read('../SKILL.md');

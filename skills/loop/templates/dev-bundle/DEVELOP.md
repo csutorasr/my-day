@@ -1,9 +1,10 @@
 <!-- TEMPLATE — the dev-bundle profile, a worked example (Jira + GitLab). my-day:setup replaces every <PLACEHOLDER> from what it detected in the bundle. -->
-# Development rules (claude -p runs)
+# Development rules (runs per repo: claude -p or T3 Code threads)
 
 ## Repos
-Cloned inside the bundle repo and ignored by it. Every code step runs as `claude -p` in the repo's
-worktree (the repo's own CLAUDE.md, `.claude/settings.json`, skills and MCP apply).
+Cloned inside the bundle repo and ignored by it. Every code step runs as `claude -p` (or, with
+`runner: t3`, as a T3 Code thread) in the repo's worktree (the repo's own CLAUDE.md,
+`.claude/settings.json`, skills and MCP apply).
 
 | Repo | Remote | Target branch | Notes |
 |---|---|---|---|
@@ -17,7 +18,8 @@ worktree (the repo's own CLAUDE.md, `.claude/settings.json`, skills and MCP appl
 - Only tracked files are in a worktree: settings a run needs belong in the repo's tracked
   `.claude/settings.json`, not `settings.local.json`.
 - Branch names: `feat/<KEY>-<slug>`, `fix/<KEY>-<slug>`, `chore/<KEY>-<slug>`. Same branch name in every repo a ticket touches.
-- The loop removes the worktree after merge: `git -C <repo> worktree remove ../.worktrees/<repo>/<branch>`.
+- The loop removes the worktree after merge: `git -C <repo> worktree remove ../.worktrees/<repo>/<branch>`
+  (with `runner: t3` and `t3Cleanup: remove`, then also its T3 project: `$SM t3 remove <worktree>`).
 
 ## Cross-repo order
 The chain order for a ticket touching several repos; each run gets the earlier runs' results.

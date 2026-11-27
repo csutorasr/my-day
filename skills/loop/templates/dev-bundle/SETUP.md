@@ -25,6 +25,8 @@ FIX-REVIEW, MERGE-GATES, POST-MR) come from `templates/dev/`.
   `CLAUDE.md` / `.claude/settings.json`.
 - Show the list and confirm it ("these are the repos the loop works in").
 - `claude --version` works (the runner starts it); `.worktrees/` is ignored by the bundle repo.
+  In T3 Code the runner can be `t3` instead (`my-day:setup` section 4): the same chain, each
+  repo's run a T3 Code thread in that repo's worktree; then `$SM t3 check` must be `ok`.
 - The my-day plugin is enabled at **user** scope (`claude plugin list`): a run starts in a repo's
   worktree, where a project-scope enable in the bundle's `.claude/settings.json` does not apply, so
   `my-day:worker` would be missing. Offer `claude plugin install my-day@csutorasr --scope user`.
@@ -35,7 +37,8 @@ frontend), proposing one from dependencies you can see (API specs, SDK packages,
 the chain order: each repo's run starts when the previous one is done and gets its result.
 
 ## 2. Permissions
-Runs cannot answer prompts. Propose `permissionMode: acceptEdits` (in `LOOP.md`) and, per repo
+`claude -p` runs cannot answer prompts (a T3 thread can stop and ask: the loop then pulls the
+user in, so prompts cost their time, not the run). Propose `permissionMode: acceptEdits` (in `LOOP.md`) and, per repo
 without one, a minimal `.claude/settings.json` `permissions.allow` for its build, test and lint
 commands, `git`, `glab`/`gh`, and the state CLI the worker reads first
 (`Bash(node ${CLAUDE_PLUGIN_ROOT}/skills/loop/bin/state.mjs:*)`, with the real plugin path) — ask

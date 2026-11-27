@@ -5,6 +5,7 @@
 - Repos are separate git repos under the workspace root; workers create worktrees there:
   `git -C <repo> fetch origin && git -C <repo> worktree add ../.worktrees/<repo>/<branch> -b <branch> origin/main`
   (existing branch: `git -C <repo> worktree add ../.worktrees/<repo>/<branch> <branch>`).
+  With `runner: claude-p` or `t3` the loop creates it before the run and the worker works in it.
 - Branch names: `feat/<KEY>-<slug>`, `fix/<KEY>-<slug>`, `chore/<KEY>-<slug>`. Same branch name in every repo a ticket touches.
 - The orchestrator removes the worktree after merge: `git -C <repo> worktree remove ../.worktrees/<repo>/<branch>`.
 

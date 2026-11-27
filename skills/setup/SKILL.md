@@ -22,6 +22,7 @@ exploration found so the user mostly confirms.
 - A team roster (people → domain → accounts) if one exists.
 - Available tools: which MCP servers and CLIs are connected (Atlassian, Linear, Azure DevOps,
   YouTrack, `gh`, `glab` …).
+- The host: `$SM t3 check` → `host.name` `t3` = this session is a T3 Code thread (section 4).
 
 ## 2. Profile
 The profiles are the folders under `templates/` that contain a `SETUP.md`. A profile named in the
@@ -45,7 +46,36 @@ files it does not have come from that profile's folder. For every file it writes
   files use. Check them before handing back: `$SM bootstrap` reports the CLIs; check each `mcp:`
   one against this session's tools and record it with `$SM source <name> ok|missing`.
 
-## 4. Ignores
+## 4. T3 Code
+Only when `$SM t3 check` says `host.name` is `t3`, or the user asks for workers as T3 threads.
+`ok` false → show its `error` (T3 Code not running, or the CLI not found: `t3Bin` in
+`LOOP.local.md`) and leave the runner as it is.
+
+**Runner** (profiles with workers) — ask how workers should run; in T3 Code propose `t3`:
+
+| `runner` | A worker is | For | Against |
+|---|---|---|---|
+| `t3` | its own T3 Code thread in the repo's worktree | The repo's `CLAUDE.md`, settings and skills apply. You can open each worker, watch it and answer it, from desktop or phone; it outlives the loop's thread. A model per kind (`t3Model…`), Codex possible | Every worktree becomes a T3 project in the sidebar (or `t3Project: containing`). The `t3` CLI cannot stop a thread: the loop interrupts it with T3 Code's tool when it has it, else you press Stop in it |
+| `agent` | a subagent of the loop's thread | Nothing to set up | Works from the workspace root, so a repo's own settings do not apply. Ends with the loop's session; you see it only through the loop |
+| `claude-p` | a headless `claude -p` process in the repo's worktree | The repo's settings apply; can be killed | No UI: it cannot ask, and you cannot look in. Needs the `claude` CLI |
+
+`t3` → in `LOOP.md`: `runner: t3`; ask which model workers use (`t3Model`, with `t3Provider` and
+`t3Options`; empty = the T3 project's default) and propose a cheap `t3ModelRebase`. Personal
+choices (`t3Bin`, a model) → `LOOP.local.md`. Worker threads start in a worktree, where a
+project-scope enable of this plugin does not apply: check it is enabled at **user** scope
+(`claude plugin list`), else offer `claude plugin install my-day@csutorasr --scope user`.
+
+**Projects** — `$SM t3 check <repo folder> …` → `projects` says which folders are inside a T3
+project. Always ask before registering anything:
+- The workspace is not one → offer `$SM t3 register <workspace> --title <name>` (it runs
+  `t3 project add`): the loop's thread and the dashboard tab then belong to a project the user
+  can find.
+- `t3Project: worktree` (default) needs nothing more: each worker's worktree is registered when
+  the worker starts — say so, and that those projects stay until removed (`t3Cleanup`).
+- `t3Project: containing` → every repo must be inside a registered project: offer the workspace
+  (covers repos under it) or each repo that is outside.
+
+## 5. Ignores
 In a git repo root append to `.gitignore` (ask before editing a tracked file; otherwise
 `.git/info/exclude`):
 ```
@@ -59,7 +89,7 @@ In a git repo root append to `.gitignore` (ask before editing a tracked file; ot
 Web push (optional): `npm install --prefix ${CLAUDE_PLUGIN_ROOT}/skills/loop/server --no-audit --no-fund`
 — without it the dashboard only notifies while its tab is open.
 
-## 5. Register
+## 6. Register
 `$SM loops register` adds this workspace to the machine's loop list (`~/.my-day/loops/`), so the
 shared dashboard shows it. `$SM config missing` empty → hand back to `my-day:loop`.
 

@@ -43,6 +43,8 @@ One question at a time, proposing a default:
 - AI reviewer: job name and bot account, if any (FIX-REVIEW, POST-MR).
 - Reviewers by repo/domain, from the roster (POST-MR).
 - Ticket transitions after MR open / after merge (POST-MR).
+- Workers: how they run (`runner` in `LOOP.md`). In a T3 Code thread follow `my-day:setup`
+  section 4 (T3 threads per repo worktree, and T3 projects); otherwise keep `agent`.
 - Outward writes: propose the `## Writes defaults` below for `WRITES.md`; ask which to tighten
   (e.g. `jira: transition` → `ask`). Everything stays `auto` unless the user says otherwise,
   so the dev loop behaves as it always has.

@@ -5,12 +5,19 @@ description: Worker skill for a background agent dispatched by the my-day loop -
 
 # my-day worker
 
-Your prompt gives: Kind, workspace root, item id, task, dry run — and, when the loop runs you as
-`claude -p` in one repo, `Repo`, `Worktree` (your working directory, already created) and maybe
-`Previous runs` (what earlier repos of this ticket did: branch, MR, summary; build on them). `$SM` =
+Your prompt gives: Kind, workspace root, item id, task, dry run — and, when the loop runs you
+outside its session (as `claude -p` or as a T3 Code thread) in one repo, `Repo`, `Worktree` (already
+created; your working directory unless the prompt says to `cd` there) and maybe `Previous runs`
+(what earlier repos of this ticket did: branch, MR, summary; build on them). `$SM` =
 `${CLAUDE_PLUGIN_ROOT}/skills/loop/bin/state.mjs` (full path each call; run from the workspace
-root). Read `$SM show <id>`, `$SM config show DEVELOP` and your kind's file below. Never
+root — or, given `State dir:`, from anywhere with `MY_DAY_DIR=<state dir>` in front). Read
+`$SM show <id>`, `$SM config show DEVELOP` and your kind's file below. Never
 write my-day state — the orchestrator does that from your final message.
+
+Reading this file because you have no Skill tool (e.g. a Codex thread): the same rules apply; for a
+skill named below that you don't have, apply the practice it names. As a T3 Code thread the user
+can see and answer you, but they are not watching: a question for them goes into `blockers` with
+status `blocked` (the loop asks it); asking in the thread makes the whole run wait for them.
 
 ## Every kind
 1. Worktree in the sub-repo exactly as DEVELOP.md says (given `Worktree:` → work there and only in
